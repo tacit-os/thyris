@@ -185,6 +185,14 @@ TestCase {
         compare(s.reopenClosed(), "", "nothing left to reopen");
     }
 
+    function test_aQuietCloseIsNotOfferedAgainNorLeftBehind() {
+        const [s, t, ids] = withThread("t", ["one", "two"]);
+        compare(s.closePage(ids[1], true), [ids[1]]);
+        compare(s.threadById(t).pages, [ids[0]]);
+        compare(s.threadById(t).left ?? [], [], "no trace in the thread");
+        compare(s.reopenClosed(), "", "nothing to reopen");
+    }
+
     function test_reopenClosedMakesAThreadWhenItsThreadIsGone() {
         const [s, t, ids] = withThread("t", ["one", "two"]);
         s.closePage(ids[1]);
@@ -510,6 +518,25 @@ TestCase {
         compare(s.always, [a, b]);
         verify(!(c in s.pages));
         compare(s.currentPage, "", "the most recent thread page takes over; there is none, so the empty state");
+    }
+
+    function test_closeAlwaysKeepsTheCell() {
+        const s = make();
+        const a = s.addAlways("https://mail.example/", "mail", "");
+        const t = s.newThread("t");
+        const p = s.addPage(t, "https://other.example/", "");
+        s.update(p, { title: "other" });
+        s.activate(a);
+        s.update(a, { loading: true });
+        s.update(a, { loading: false });     // its start is loaded
+        s.update(a, { url: "https://mail.example/inbox", state: "live", loading: true, audible: true });
+        compare(s.closePage(a), [], "closePage is for pages in a thread");
+        compare(s.closeAlways(a), [a]);
+        compare(s.always, [a], "the cell stays");
+        compare(s.pages[a].state, "unloaded");
+        compare(s.pages[a].url, "https://mail.example/", "back at its start");
+        compare(s.currentPage, p, "the page on screen gives way");
+        compare(s.closeAlways(p), [], "only a pin");
     }
 
     // threads given as [title, pageCount], listed in that order; returns [session, threads]

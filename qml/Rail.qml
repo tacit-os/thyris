@@ -1103,10 +1103,12 @@ Item {
                         width: 40; height: 40
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                         onClicked: mouse => {
                             if (cell.modelData.more !== undefined)
                                 rail.allAlways = true;
+                            else if (mouse.button === Qt.MiddleButton)
+                                rail.closePage(cell.modelData.id);
                             else if (mouse.button === Qt.RightButton)
                                 rail.openMenu("always", cell.modelData.id, "a:" + cell.modelData.id, cell, mouse.x, mouse.y);
                             else

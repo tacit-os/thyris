@@ -295,6 +295,15 @@ Window {
     // Settings lies over the page you came from (docked from the rail, 2026-10-15): that page's view stays on screen under
     // the sheet, and Settings' own (an empty document) keeps the keys unseen, at opacity 0
     property var behindView: null
+    // An address typed while Settings is on screen loads in Settings' own view; the sheet is gone then and show() has not
+    // run, so the page behind it stayed drawn, with the new page at opacity 0 over the address in the rail
+    Connections {
+        target: root.behindView !== null ? root.currentView : null
+        function onUrlChanged() {
+            if (root.behindView !== null && root.currentView && /^https?:/i.test(String(root.currentView.url)))
+                root.show(sessionModel.currentPage);
+        }
+    }
     // the browser's own page on screen (PLAN.md 3.17): "settings" or "pages" for browser://settings and browser://pages,
     // drawn over their view; "" for any other page, and for one of them whose load failed
     readonly property string ownKind: {
@@ -370,9 +379,16 @@ Window {
                 downloadModel.requested(download, "", "", true);
                 return;
             }
-            const from = !v || v.typedLoad ? "" : String(v.url) || (v.openedBy ? String(v.openedBy.url) : "");
+            // a page that was made for a file and showed nothing: the file is the opener's, and the empty page goes
+            const empty = !!v && v.downloadOnly && !v.parked;
+            const from = !v || v.typedLoad ? "" : empty ? String(v.openedBy.url) : String(v.url) || (v.openedBy ? String(v.openedBy.url) : "");
             // a sign-in's window has a holder but no opener: reading its opener threw, and the download was cancelled
-            downloadModel.requested(download, !v ? "" : v.holder ? v.holder.opener?.pageId ?? "" : v.pageId ?? "", from, false);
+            const id = downloadModel.requested(download, !v ? "" : v.holder ? v.holder.opener?.pageId ?? "" : empty ? v.openedBy.pageId ?? "" : v.pageId ?? "", from, false);
+            // not one held back as insecure: that waits for Keep
+            if (empty && id !== "" && sessionModel.downloadById(id)?.state !== "blocked") {
+                const page = v.pageId;
+                Qt.callLater(() => { if (views[page] === v) dropEmptyPage(page) });
+            }
         }
     }
     // Retry for a download that failed in an earlier run (Downloader.fetch): its address in a hidden view
@@ -2148,7 +2164,8 @@ Window {
     // reached (the one window.open asked for, before it has one). A live view cannot move between windows, so it loads
     // there afresh, without window.opener.
     function popupToPage(w) {
-        const opener = w.opener, url = String(w.view.url) || w.link;
+        // the empty document a popup starts with is not an address it has reached: the page would open white
+        const shown = String(w.view.url), opener = w.opener, url = shown === "" || shown === "about:blank" ? w.link || shown : shown;
         w.shownIn = "";
         closePopup(w, false);
         if (opener && sessionModel.pages[opener.pageId] && url !== "")
@@ -2455,6 +2472,10 @@ Window {
             copyText("[" + (p.title || p.url).replace(/([\[\]\\])/g, "\\$1") + "](" + p.url.replace(/\)/g, "%29") + ")");
         else if (name === "always")
             keepInAlways();
+        else if (name === "site")
+            openSite("");
+        else if (name === "mute")
+            toggleMute(p.id);
         else if (name === "close")
             closePage(p.id);
         else if (name === "print")
@@ -2517,11 +2538,11 @@ Window {
 
     // Pages gone from the lists every main window shares (Remove from Always, in any window): their views here go, and
     // this window, if it showed one, shows its most recent page instead (a hidden one once it shows again).
-    function pagesGone(ids) {
+    function pagesGone(ids, kept) {
         const shown = ids.indexOf(sessionModel.currentPage) >= 0 || ids.some(id => views[id] !== undefined && views[id] === root.currentView);
         if (ids.indexOf(sessionModel.currentPage) >= 0)
             sessionModel.currentPage = sessionModel.mostRecentPage() ?? "";
-        dropViews(ids);
+        dropViews(ids, kept);
         if (shown && root.visible)
             afterClose();
     }
@@ -2568,6 +2589,18 @@ Window {
             retire(from);
     }
 
+    // A page a link or window.open made for a file, with nothing shown: it closes as Chrome's does, and the page whose link
+    // it was comes back if this one was on screen. It leaves no closed page (Ctrl+Shift+T).
+    function dropEmptyPage(pageId) {
+        const to = sessionModel.backTo(pageId);
+        if (to && sessionModel.currentPage === pageId)
+            show(to);
+        dropViews(sessionModel.closePage(pageId, true));
+        afterClose();
+        pinnedRail.closed(pageId);
+        peekRail.closed(pageId);
+    }
+
     // Back: on a page a link opened, with nothing earlier in its own history, the page closes and the one whose link
     // opened it comes back, as in Safari and Arc (the owner, 2026-10-16: Back did nothing there)
     function back(v) {
@@ -2600,7 +2633,14 @@ Window {
             finishClose(pageId);
     }
     function finishClose(pageId) {
-        dropViews(sessionModel.closePage(pageId));
+        if (sessionModel.always.indexOf(pageId) >= 0) {
+            // a pin: its page goes, in every window that has it, and its cell stays (Unpin takes the cell)
+            const gone = sessionModel.closeAlways(pageId);
+            windowsDo(w => { if (w !== root) w.pagesGone(gone, true) });
+            dropViews(gone, true);
+        } else {
+            dropViews(sessionModel.closePage(pageId));
+        }
         afterClose();
         pinnedRail.closed(pageId);
         peekRail.closed(pageId);

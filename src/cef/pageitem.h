@@ -75,6 +75,11 @@ class PageItem : public QQuickItem {
     // the page's process has stopped answering (Chromium's hang monitor); the page says so, and waitForPage gives it more
     // time or endAndReload ends the process and loads the page again
     Q_PROPERTY(bool unresponsive READ unresponsive NOTIFY unresponsiveChanged)
+    // the page's sound muted (the rail's mute, Ctrl+M, a site's Sound set to Block); kept across a discard, which closes the
+    // page and applies it again to the page made anew
+    Q_PROPERTY(bool audioMuted READ audioMuted WRITE setAudioMuted NOTIFY audioMutedChanged)
+    // the page has a sound stream open (CefAudioHandler: a copy of what plays is offered to Thyris, the speakers still get it)
+    Q_PROPERTY(bool recentlyAudible READ recentlyAudible NOTIFY recentlyAudibleChanged)
     // Qt's LifecycleState: 0 active, 1 frozen (kept as active here), 2 discarded: the page closes (its process and
     // memory freed) and keeps its address, title and back/forward list; active again, it is made anew from that list
     // (Opsis's history patch) or loads its address afresh
@@ -137,6 +142,10 @@ public:
     qint64 renderProcessPid() const { return m_renderPid; }
     bool unresponsive() const { return m_unresponsive; }
     void setUnresponsive(bool on);
+    bool audioMuted() const { return m_audioMuted; }
+    void setAudioMuted(bool muted);
+    bool recentlyAudible() const { return m_audible; }
+    void audibleChecked();              // PageClient: its sound streams opened or closed
     int lifecycleState() const { return m_lifecycle; }
     void setLifecycleState(int state);
     bool isFullScreen() const { return m_fullScreen; }
@@ -244,6 +253,8 @@ signals:
     void zoomGesture(int steps);
     void renderProcessPidChanged();
     void unresponsiveChanged();
+    void audioMutedChanged();
+    void recentlyAudibleChanged();
     void lifecycleStateChanged();
     void devToolsViewChanged();
     void inspectedViewChanged();
@@ -336,6 +347,8 @@ private:
     bool m_loading = false;
     qint64 m_renderPid = 0;
     bool m_unresponsive = false;
+    bool m_audioMuted = false;
+    bool m_audible = false;
     int m_lifecycle = 0;
     QUrl m_givenUrl;            // loadHtml before the page is made: handed to its client in openNow
     QByteArray m_givenHtml;
@@ -360,6 +373,12 @@ private:
     // when the page changes, and the one for the last size of a resize can be missed while its capture switches size
     QTimer m_refresh;
     int m_refreshes = 0;
+    // A load that ended on screen with no frame since it began (a new document that never drew: a white page) is nudged
+    // twice (checkDrawn): a fresh frame asked for, then the page hidden and shown again with its size told afresh
+    QTimer m_drawnCheck;
+    int m_arrivedAtLoad = 0;            // m_arrived when the latest load began
+    int m_drawnTries = 0;
+    void checkDrawn();
     qint64 m_lastBegin = 0, m_lastBusy = 0;     // ns, steady clock
     qint64 m_resizedAt = 0;             // ns: the last size change the engine has not answered yet (traced)
     QSize m_resizeTarget;               // its frames' size in pixels
@@ -380,7 +399,11 @@ private:
     PageHistory *m_history = new PageHistory(this);
     bool m_opening = false;             // openNow() is queued
     int m_arrived = 0;
-    void frameArrived();                // PageClient: a frame has come (m_arrived)
+    void frameArrived(bool stored);     // PageClient: a frame has come (m_arrived); `stored`: it is the one to show (m_stored)
+    void watchFrame();                  // a frame should come soon: if none has in 100 ms, the engine draws again
+    void watchedFrame();
+    int m_stored = 0, m_watchSeen = 0;
+    QTimer m_watch;
     // A resize's hold (geometryChange): the frame on screen stays, 1:1 at its own size, until the page has laid itself out
     // for the new size and two frames have come since, or for 150 ms. CEF's frames in between are the old picture
     // stretched to the new size, and showed as a stretched page while a window opened beside it (2026-10-17; Chrome

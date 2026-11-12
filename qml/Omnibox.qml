@@ -216,6 +216,10 @@ QtObject {
         { kind: "action", action: "copy", glyph: "link", title: "Copy link", detail: "" },
         { kind: "action", action: "markdown", glyph: "content_copy", title: "Copy as Markdown link", detail: "" },
         { kind: "action", action: "always", glyph: "keep", title: "Pin this site", detail: "Ctrl+Shift+D" },
+        // what a site may use (camera, location, sound, pop-ups) and its zoom: the panel Ctrl+I opens. Not named Settings,
+        // so ">settings" still finds Settings first
+        { kind: "action", action: "site", glyph: "tune", title: "Site permissions and sound", detail: "Ctrl+I" },
+        { kind: "action", action: "mute", glyph: "volume_off", title: "Mute or unmute page", detail: "Ctrl+M" },
         { kind: "action", action: "close", glyph: "close", title: "Close page", detail: "Ctrl+W" },
         // the browser's own pages (PLAN.md 7)
         { kind: "action", action: "settings", glyph: "settings", title: "Settings", detail: "Ctrl+," },

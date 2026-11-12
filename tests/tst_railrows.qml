@@ -480,7 +480,7 @@ TestCase {
         const a = s.addAlways("https://a.example/", "a", ""), b = s.addAlways("https://b.example/", "b", "");
         compare(texts(RailRows.menu(s, "always", a)), ["Copy link", "Move right", "-", "Unpin"]);
         s.update(b, { state: "frozen" });
-        compare(texts(RailRows.menu(s, "always", b)), ["Reload", "Mute", "Copy link", "Move left", "-", "Unpin"]);
+        compare(texts(RailRows.menu(s, "always", b)), ["Reload", "Mute", "Copy link", "Move left", "-", "Close page", "Unpin"]);
         const f = s.newThread("filed");
         s.addPage(f, "https://f.example/1", "");
         s.addPage(f, "https://f.example/2", "");

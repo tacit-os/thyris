@@ -590,7 +590,11 @@ function menu(session, type, ref, offTheRecord, tabsTop) {
             out.push({ text: "Move left", action: "moveLeft" });
         if (at < session.always.length - 1)
             out.push({ text: "Move right", action: "moveRight" });
-        out.push(sep, { text: "Unpin", action: "removeAlways" });
+        // Close page keeps the pin (its cell stays, unloaded); Unpin takes the cell away too
+        out.push(sep);
+        if (p.state !== "unloaded")
+            out.push({ text: "Close page", shortcut: ref === session.currentPage ? "Ctrl+W" : "", action: "close" });
+        out.push({ text: "Unpin", action: "removeAlways" });
         return withPlace(out);
     }
     const here = !!session.current && !!session.current.thread;

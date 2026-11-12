@@ -26,6 +26,7 @@ public:
 
     static inline bool checkMode = false;
     // CEF with uBlock Origin Lite loaded (main.cpp): it blocks, and this neither refuses requests nor gives pages cosmetics
+    // (YouTube's pages excepted: cosmetic())
     static inline bool extensionBlocks = false;
 
     bool ready() const { return m_engine != nullptr; }

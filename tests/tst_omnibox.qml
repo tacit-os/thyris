@@ -285,6 +285,9 @@ TestCase {
         compare(omni.suggest(">settings", ids.here).map(r => r.action), ["settings"]);
         compare(omni.suggest(">memory", ids.here).map(r => r.title + " " + r.detail), ["Pages and memory Shift+Esc"]);
         compare(omni.suggest(">key", ids.here).map(r => r.detail), ["Ctrl+/"]);
+        // the site panel and the mute are in the list too
+        compare(omni.suggest(">sound", ids.here).map(r => r.action + " " + r.detail), ["site Ctrl+I"]);
+        compare(omni.suggest(">mute", ids.here).map(r => r.action + " " + r.detail), ["mute Ctrl+M"]);
         // print and reader view (PLAN.md 7), after Reload; with no article on the page, Reader view does nothing and says why
         compare(omni.suggest(">", ids.here).slice(0, 3).map(r => r.action), ["reload", "print", "reader"]);
         compare(omni.suggest(">print", ids.here).map(r => r.title + " " + r.detail), ["Print Ctrl+P"]);

@@ -59,8 +59,6 @@ PageItem {
     property int webChannelWorld: 0                         // always Opsis's world on CEF
 
     property int recommendedState: 0
-    property bool audioMuted: false                         // slice 2
-    property bool recentlyAudible: false
 
     // Qt's error pages switch (BrowserView turns it off for an https attempt, so the attempt leaves no history entry)
     Connections {

@@ -426,7 +426,12 @@ QVariantMap Adblock::seen(const QString &url, QObject *profile) const {
 }
 
 QVariantMap Adblock::cosmetic(const QString &url, QObject *profile) const {
-    if (extensionBlocks)
+    // uBlock Origin Lite does not hold back YouTube's ads (Discord, 1.0.1: they played with it installed). Its Manifest V3
+    // rules only refuse requests; the ads there come in the player's own data, which uBlock Origin's scriptlets prune.
+    // So YouTube keeps this blocker's scriptlets and element hiding beside the extension's rules.
+    const QString host = QUrl(url).host().toLower();
+    const bool youtube = host == QLatin1String("youtube.com") || host.endsWith(QLatin1String(".youtube.com"));
+    if (extensionBlocks && !youtube)
         return {};
     const AdblockInterceptor *interceptor = interceptorOf(profile);
     {

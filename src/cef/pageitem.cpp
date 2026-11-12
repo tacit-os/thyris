@@ -252,11 +252,12 @@ public:
             CefPostTask(TID_UI, base::BindOnce(&deleteTextures, textures));     // refused once CEF has stopped
     }
 
-    void write(const CefAcceleratedPaintInfo &info) {
+    // false when the frame was skipped: the last one stays on screen
+    bool write(const CefAcceleratedPaintInfo &info) {
         const qint64 began = traced ? nowNs() : 0;
         Copier &copier = Copier::get();
         if (!copier.current())
-            return;
+            return false;
         QOpenGLExtraFunctions *gl = copier.gl;
         const cef_rect_t &visible = info.extra.visible_rect;
         const auto &plane = info.planes[0];
@@ -267,7 +268,7 @@ public:
             if (traced)
                 std::fprintf(stderr, "cef trace: frame skipped: visible %d,%d %dx%d, coded %dx%d\n", visible.x, visible.y, visible.width,
                              visible.height, info.extra.coded_size.width, info.extra.coded_size.height);
-            return;
+            return false;
         }
         if (traced) {
             static cef_rect_t lastVisible{}, lastContent{};
@@ -300,7 +301,7 @@ public:
             if (!m_warned)
                 qWarning("PageItem: the page's frame cannot be imported (EGL 0x%x)", eglGetError());
             m_warned = true;
-            return;
+            return false;
         }
         GLuint source = 0;
         gl->glGenTextures(1, &source);
@@ -338,7 +339,7 @@ public:
             gl->glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
             gl->glDeleteTextures(1, &source);
             copier.destroyImage(copier.display, image);
-            return;
+            return false;
         }
         gl->glBlitFramebuffer(visible.x, visible.y, visible.x + visible.width, visible.y + visible.height,
                               0, 0, size.width(), size.height(), GL_COLOR_BUFFER_BIT, GL_NEAREST);
@@ -364,6 +365,7 @@ public:
         QMutexLocker lock(&m_lock);
         std::swap(m_back, m_ready);
         m_fresh = true;
+        return true;
     }
 
     // through memory: BGRA, premultiplied, CEF's own again when the callback returns
@@ -860,7 +862,8 @@ private:
 class PageClient : public CefClient, public CefRenderHandler, public CefLifeSpanHandler, public CefLoadHandler,
                    public CefDisplayHandler, public CefDevToolsMessageObserver, public CefKeyboardHandler,
                    public CefFocusHandler, public CefContextMenuHandler, public CefRequestHandler, public CefJSDialogHandler,
-                   public CefFindHandler, public CefDialogHandler, public CefDownloadHandler, public CefPermissionHandler {
+                   public CefFindHandler, public CefDialogHandler, public CefDownloadHandler, public CefPermissionHandler,
+                   public CefAudioHandler {
 public:
     PageClient(PageItem *item, std::shared_ptr<PageFrames> frames, std::shared_ptr<PageFrames> popup)
         : m_item(item), m_frames(std::move(frames)), m_popup(std::move(popup)) {}
@@ -1152,6 +1155,21 @@ public:
     CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
     CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
     CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
+    CefRefPtr<CefAudioHandler> GetAudioHandler() override { return this; }
+
+    // The page's sound, for Qt's recentlyAudible (the rail's ♪ and its mute): CEF offers a copy of what plays and the page
+    // still plays to the speakers; the packets are not used, only whether a stream is open. A stream that ends with an
+    // error is counted closed too.
+    void OnAudioStreamStarted(CefRefPtr<CefBrowser>, const CefAudioParameters &, int) override { audioStreams(1); }
+    void OnAudioStreamPacket(CefRefPtr<CefBrowser>, const float **, int, int64_t) override {}
+    void OnAudioStreamStopped(CefRefPtr<CefBrowser>) override { audioStreams(-1); }
+    void OnAudioStreamError(CefRefPtr<CefBrowser>, const CefString &) override { audioStreams(-1); }
+    bool audible() const { return m_streams.load() > 0; }
+    void audioStreams(int change) {
+        int now = m_streams.load();
+        while (!m_streams.compare_exchange_weak(now, qMax(0, now + change))) {}
+        toItem([](PageItem *item) { item->audibleChecked(); });
+    }
     CefRefPtr<CefDialogHandler> GetDialogHandler() override { return this; }
     CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
 
@@ -1351,6 +1369,8 @@ public:
         // focus follows, or a field the page focuses as it loads fires no focus event (the password Fill row's watcher)
         toItem([browser](PageItem *item) {
             item->noteBrowser(browser->GetIdentifier());
+            if (item->audioMuted())
+                browser->GetHost()->SetAudioMuted(true);
             if (traced)
                 std::fprintf(stderr, "cef trace: page %p made, %s the keys\n", static_cast<void *>(item),
                              item->hasActiveFocus() ? "with" : "without");
@@ -1926,16 +1946,16 @@ public:
             refocus(browser);
         const qint64 painted = traced ? nowNs() : 0;
         const QSize got = type == PET_VIEW ? QSize(width, height) : QSize();
-        toItem([painted, got](PageItem *item) { if (!got.isEmpty()) item->m_lastFrame = got; item->frameArrived(); item->busy(); item->update(); if (traced) { item->traceFrame(painted); item->traceResized(got); } });
+        toItem([painted, got](PageItem *item) { if (!got.isEmpty()) item->m_lastFrame = got; item->frameArrived(true); item->busy(); item->update(); if (traced) { item->traceFrame(painted); item->traceResized(got); } });
     }
     void OnAcceleratedPaint(CefRefPtr<CefBrowser> browser, PaintElementType type, const RectList &,
                             const CefAcceleratedPaintInfo &info) override {
-        (type == PET_VIEW ? m_frames : m_popup)->write(info);
+        const bool stored = (type == PET_VIEW ? m_frames : m_popup)->write(info);
         if (type == PET_VIEW)
             refocus(browser);
         const qint64 painted = traced ? nowNs() : 0;
         const QSize got = type == PET_VIEW ? QSize(info.extra.visible_rect.width, info.extra.visible_rect.height) : QSize();
-        toItem([painted, got](PageItem *item) { if (!got.isEmpty()) item->m_lastFrame = got; item->frameArrived(); item->busy(); item->update(); if (traced) { item->traceFrame(painted); item->traceResized(got); } });
+        toItem([painted, got, stored](PageItem *item) { if (!got.isEmpty()) item->m_lastFrame = got; item->frameArrived(stored); item->busy(); item->update(); if (traced) { item->traceFrame(painted); item->traceResized(got); } });
     }
 
     // A main-frame load, as Qt WebEngine reports it: started (status 0) when the navigation starts (OnBeforeBrowse, a
@@ -1955,8 +1975,14 @@ public:
         const bool loading = info.value(QStringLiteral("status")).toInt() == 0;
         toItem([loading, info](PageItem *item) {
             item->m_loading = loading;
-            if (loading)
+            if (loading) {
                 item->m_loadStarted = nowNs();
+                item->m_arrivedAtLoad = item->m_arrived;
+                item->m_drawnCheck.stop();
+            } else if (info.value(QStringLiteral("status")).toInt() == 2 && item->isVisible()) {
+                item->m_drawnTries = 0;
+                item->m_drawnCheck.start(700);
+            }
             emit item->loadingChanged(info);
         });
     }
@@ -2402,6 +2428,7 @@ private:
 
     QMutex m_lock;
     PageItem *m_item;
+    std::atomic<int> m_streams{0};  // the page's open sound streams (audioStreams)
     std::vector<std::pair<std::string, uint32_t>> m_answered;  // prompts answered in this page load: origin, kinds (forgetAnswers)
     bool m_errorPagesOff = false;                               // setErrorPages
     bool m_navigated = false;       // a main-frame navigation seen (CEF's UI thread): the first may be the page's creation
@@ -2525,6 +2552,10 @@ PageItem::PageItem(QQuickItem *parent) : QQuickItem(parent), m_userScripts(new S
     connect(&m_beat, &QTimer::timeout, this, &PageItem::beatTick);
     m_refresh.setSingleShot(true);
     connect(&m_refresh, &QTimer::timeout, this, &PageItem::refreshFrame);
+    m_watch.setSingleShot(true);
+    connect(&m_watch, &QTimer::timeout, this, &PageItem::watchedFrame);
+    m_drawnCheck.setSingleShot(true);
+    connect(&m_drawnCheck, &QTimer::timeout, this, &PageItem::checkDrawn);
     m_holdLimit.setSingleShot(true);
     m_holdLimit.setInterval(150);
     connect(&m_holdLimit, &QTimer::timeout, this, &PageItem::endHold);
@@ -2592,6 +2623,7 @@ void PageItem::bridged(const QJsonObject &message) {
     if (m_scrollPosition != at) {
         m_scrollPosition = at;
         emit scrollPositionChanged();
+        watchFrame();
     }
     // the page has its new layout: two more frames and the hold is over
     if (m_holding && m_holdFrom < 0)
@@ -3144,8 +3176,12 @@ void PageItem::setDevToolsView(PageItem *view) {
     emit devToolsStateChanged();
 }
 
-void PageItem::frameArrived() {
+void PageItem::frameArrived(bool stored) {
     ++m_arrived;
+    if (stored)
+        ++m_stored;
+    else
+        watchFrame();       // skipped: the last frame stays on screen, and a still page would not send another
     if (m_holding && m_holdFrom >= 0 && m_arrived - m_holdFrom >= 2)
         endHold();
 }
@@ -3456,6 +3492,20 @@ void PageItem::setUnresponsive(bool on) {
         emit unresponsiveChanged();
 }
 
+void PageItem::setAudioMuted(bool muted) {
+    if (std::exchange(m_audioMuted, muted) == muted)
+        return;
+    if (CefRefPtr<CefBrowser> page = m_client ? m_client->browser() : nullptr)
+        page->GetHost()->SetAudioMuted(muted);
+    emit audioMutedChanged();
+}
+
+void PageItem::audibleChecked() {
+    const bool audible = m_client && m_client->audible();
+    if (std::exchange(m_audible, audible) != audible)
+        emit recentlyAudibleChanged();
+}
+
 void PageItem::waitForPage() {
     if (m_client)
         m_client->waitForPage();
@@ -3612,6 +3662,7 @@ void PageItem::setLifecycleState(int state) {
             emit renderProcessPidChanged();
         }
         setUnresponsive(false);
+        audibleChecked();
         if (std::exchange(m_loading, false))
             emit loadingChanged({{QStringLiteral("status"), 1}, {QStringLiteral("url"), m_url}});
         update();
@@ -4041,11 +4092,54 @@ void PageItem::windowBeat() {
         update();
 }
 
+// The page says it scrolled, or a frame of it was skipped: a frame should be on screen soon. If none has come in 100 ms
+// the engine is asked to draw again (Invalidate, as after a resize), so the page on screen is never behind its scrollbar.
+// A page that is drawing sends frames all the time and never gets here.
+void PageItem::watchFrame() {
+    if (m_watch.isActive() || !isVisible())
+        return;
+    m_watchSeen = m_stored;
+    m_watch.start(100);
+}
+
+void PageItem::watchedFrame() {
+    if (m_stored != m_watchSeen || !isVisible())
+        return;
+    if (CefRefPtr<CefBrowser> page = m_client ? m_client->browser() : nullptr) {
+        if (traced)
+            std::fprintf(stderr, "cef trace: no frame 100 ms after the page scrolled or a frame was skipped: drawing again\n");
+        page->GetHost()->Invalidate(PET_VIEW);
+    }
+}
+
 void PageItem::refreshFrame() {
     if (auto host = m_client && m_client->browser() ? m_client->browser()->GetHost() : nullptr)
         host->Invalidate(PET_VIEW);
     if (--m_refreshes > 0)
         m_refresh.start(250);
+}
+
+// A page whose load has ended and which is on screen has drawn something since the load began: a new document always
+// paints. When none has come (a Google sign-in left a white page, Discord), CEF's view for the new document was never
+// told to draw: a frame is asked for, and if that brings none the page is hidden, shown and sized again.
+void PageItem::checkDrawn() {
+    if (!m_client || !isVisible() || m_loading || m_arrived != m_arrivedAtLoad)
+        return;
+    if (traced)
+        std::fprintf(stderr, "cef trace: page %p drew nothing since its load began (try %d)\n", static_cast<void *>(m_client.get()), m_drawnTries);
+    if (m_drawnTries++ == 0) {
+        busy();
+        beginFrame();
+        if (auto host = m_client->browser() ? m_client->browser()->GetHost() : nullptr)
+            host->Invalidate(PET_VIEW);
+        m_drawnCheck.start(700);
+        return;
+    }
+    m_client->hide(true);
+    m_client->hide(false);
+    m_client->resize(size().toSize(), window() ? window()->effectiveDevicePixelRatio() : 1, mapToGlobal(QPointF()).toPoint());
+    busy();
+    beginFrame();
 }
 
 void PageItem::traceResized(QSize got) {

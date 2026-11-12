@@ -202,6 +202,8 @@ WebEngineView {
         const kept = keptLoad
         keptLoad = null
         const ownDocument = request.status === WebEngineView.LoadSucceededStatus || request.isErrorPage
+        if (ownDocument && String(request.url) !== "about:blank")
+            hadDocument = true
         if (kept && (request.isDownload || sitePending && !ownDocument))
             keepLoad(kept)
         slowTimer.stop()
@@ -1293,6 +1295,10 @@ WebEngineView {
     property int opened: 0
     property bool parked: false
     property var holder: null
+    // a page a link or window.open made whose first load turned into a download: it never showed a document, and
+    // Main closes it once the file is on its way (it stayed as an empty page)
+    property bool hadDocument: false
+    readonly property bool downloadOnly: openedBy !== null && holder === null && !typedLoad && !hadDocument
     // Main.closePage: the page's beforeunload runs first ("Leave this page?" if it has one and had
     // input), then closeAccepted. A page that answers neither within 1 s closes anyway.
     property bool closing: false

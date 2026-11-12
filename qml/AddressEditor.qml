@@ -43,7 +43,7 @@ Item {
     signal forgetRow(var row)                // Shift+Delete on a history row, a closed page or an Earlier thread
     signal undo()                            // Undo on "Forgot <title> · Undo"
     property var notice: null                // Main's notice: a forget's undo shows on @'s last line
-    signal pageAction(string name)           // reload, print, reader, copy, markdown, always, close
+    signal pageAction(string name)           // reload, print, reader, copy, markdown, always, site, mute, close
     signal findOnPage(string text)           // the / prefix: find takes the card's place
     signal askPraxis(string question)        // the ? prefix: Praxis answers (Main.askPraxis)
 

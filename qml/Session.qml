@@ -149,15 +149,17 @@ QtObject {
 
     // Ctrl+W: a page closes; a thread of one goes with its page and is not filed (PLAN.md 3.12).
     // Always pages are removed with removeAlways instead. Returns the page ids whose views should go.
-    function closePage(pageId) {
+    // `quiet`: a page that showed nothing, not offered again by Ctrl+Shift+T
+    function closePage(pageId, quiet) {
         const p = pages[pageId];
         if (!p)
             return [];
         const t = threadById(p.thread);
         if (!t)
             return [];
-        closed.push({ id: uid(), thread: t.id, url: p.url, title: p.title, icon: p.icon || "", at: Date.now(), stopped: p.stopped ?? null });
-        if (t.pages.length > 1 && p.url && p.title)
+        if (!quiet)
+            closed.push({ id: uid(), thread: t.id, url: p.url, title: p.title, icon: p.icon || "", at: Date.now(), stopped: p.stopped ?? null });
+        if (!quiet && t.pages.length > 1 && p.url && p.title)
             leave(p);
         dropPage(pageId);
         if (currentPage === pageId)
@@ -528,6 +530,23 @@ QtObject {
         learned.always = true;
         touch();
         return pageId;
+    }
+
+    // Close page on a pin (Ctrl+W, the middle button, its menu): the page goes and the cell stays, unloaded and back at
+    // its start, so a click opens it again; closePage found no thread for a pin and did nothing. Returns the page ids
+    // whose views should go.
+    function closeAlways(pageId) {
+        const p = pages[pageId];
+        if (!p || always.indexOf(pageId) < 0)
+            return [];
+        p.url = homeOf(pageId);
+        delete p.homing;
+        delete p.restore;
+        Object.assign(p, { state: "unloaded", loading: false, audible: false });
+        if (currentPage === pageId)
+            currentPage = mostRecentPage() ?? "";
+        touch();
+        return [pageId];
     }
 
     // Remove from Always: the cell and its page go. Returns the page ids whose views should go.

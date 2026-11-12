@@ -541,7 +541,7 @@ function rows(s, sub, filter) {
     // The engine has no extension manager: Thyris keeps the added ones itself (src/extensions.cpp) and the engine runs
     // them from its next start. The Web Store's Add button needs the manager and does nothing here.
     section("extensions", s.extensionsInstall === false
-        ? [{ kind: "note", key: "none", label: "Thyris can't add extensions yet. Ads are blocked by uBlock Origin Lite, which comes with it." }]
+        ? [{ kind: "note", key: "none", label: "Thyris can't add extensions yet, so an extension's button and popup can't open. Ads are blocked by uBlock Origin Lite, which comes with it. Passwords has Thyris's own manager and takes a Proton Pass export." }]
         : s.extensions.map(e => Object.assign(choice("ext:" + e.id, e.name, e.error ? "Failed: " + e.error : e.enabled ? "on" : "off"),
                                               { words: e.name, detail: extensionDetail(e, s.now) })).concat([
         { kind: "action", key: "install", label: "Add from a folder or .zip", value: "", action: "Choose" },
