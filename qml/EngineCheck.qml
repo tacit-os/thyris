@@ -5246,7 +5246,38 @@ QtObject {
           expect: () => { check.probe.report("     frames: " + check.frames); return check.frames === 0 } },
         { name: "(the pointer off it; pinned again)", wait: 1500, act: () => { probe.pointer(700, 400); probe.leave(); app.railPinned = true },
           expect: () => app.railPinned && !hoverPeek.out },
+        // Sound leaves Thyris (tools/check-engine's sound server, its one speaker recorded): 1.2.14's CefAudioHandler
+        // made CEF capture every page's sound with the source muted, and no page played anything; the round before it
+        // only looked at the screen. Ctrl+M must still silence a page.
+        { group: "sound" },
+        check.server,
+        { name: "(a page that plays a tone when clicked)", wait: 1500, act: () => app.go(check.local("/tone"), "navigate"),
+          expect: () => view.title === "tone" },
+        { name: "a click plays a 440 Hz tone: Thyris has a playback stream, and the speaker hears it", wait: 1500,
+          act: () => check.click(), expect: () => check.hears(true), page: "String(playing)", pageExpect: v => v === "true" },
+        { name: "Ctrl+M mutes the page: the speaker hears nothing", focus: "document.activeElement.blur()", key: Qt.Key_M, mods: ctrl,
+          wait: 1000, expect: () => view.audioMuted && check.hears(false) },
+        { name: "Ctrl+M again: the tone is heard again", focus: "document.activeElement.blur()", key: Qt.Key_M, mods: ctrl,
+          wait: 1000, expect: () => !view.audioMuted && check.hears(true) },
+        { name: "(the tone stopped)", wait: 300, act: () => view.runJavaScript("stop()"), expect: () => true },
     ]
+    // The sound group: whether Thyris's sound reaches the check's speaker now. Heard: a playback stream opened by Thyris
+    // (its audio service is a process under it), neither muted nor corked, and the speaker's loudest sample over 0.05
+    // (the tone plays at half scale); not heard: under 0.01, whatever streams are open. What was found goes in the report.
+    function hears(wanted) {
+        const streams = probe.soundStreams(), level = probe.soundLevel(600);
+        probe.report("     sound: " + JSON.stringify(streams) + ", loudest " + level.toFixed(3));
+        return wanted ? streams.some(s => s.fromThyris && !s.muted && !s.corked) && level > 0.05 : level >= 0 && level < 0.01;
+    }
+    // a page that plays a 440 Hz tone at half scale from a click anywhere on it (Chromium lets a page start sound only
+    // after a click); stop() ends it
+    readonly property string tonePage: "<!doctype html><title>tone</title>"
+        + "<button style='position:fixed;left:0;top:0;width:100%;height:100%' onclick='play()'>play</button><script>"
+        + "window.playing = false; let ctx = null;"
+        + "window.play = () => { ctx = new AudioContext(); const o = ctx.createOscillator(), g = ctx.createGain();"
+        + " o.frequency.value = 440; g.gain.value = 0.5; o.connect(g).connect(ctx.destination); o.start();"
+        + " ctx.resume().then(() => playing = ctx.state === 'running') };"
+        + "window.stop = () => { if (ctx) ctx.close(); playing = false };</script>"
     // Fixture for the asks: a button over the page's top-left that runs `act`, and what each ask calls;
     // `log` keeps the page's answers.
     readonly property string asksPage: "<!doctype html><title>asks</title>"
@@ -5444,8 +5475,8 @@ QtObject {
             "/login": "<title>login</title><form><input id=user><input id=pw type=password></form>",
             "/asks": check.asksPage, "/auth": { body: "<title>signed in</title>", auth: "admin:secret" },
             "/leave": "<title>leave</title><input id=f><script>onbeforeunload = e => { e.preventDefault(); e.returnValue = '' }</script>",
-            "/dialogs": check.fixturePage("dialogs", ""), "/upload": check.uploadPage, "/full": check.fullPage,
-            "/drop": "<!doctype html><title>drop</title><div id=zone style='position:fixed;left:0;top:0;width:400px;height:300px'>zone</div>"
+            "/dialogs": check.fixturePage("dialogs", ""), "/upload": check.uploadPage, "/full": check.fullPage, "/tone": check.tonePage,
+            "/drop":"<!doctype html><title>drop</title><div id=zone style='position:fixed;left:0;top:0;width:400px;height:300px'>zone</div>"
                 + "<script>window.log = []; zone.ondragover = e => e.preventDefault();"
                 + "zone.ondrop = e => { e.preventDefault(); log.push('zone ' + [...e.dataTransfer.files].map(f => f.name).join('+')) }</script>",
             "/popup-opener": check.fixturePage("opener", "addEventListener('message', e => log.push('message ' + e.data));"

@@ -91,13 +91,19 @@ int main(int argc, char *argv[]) {
             return 2;
         }
         qputenv("XDG_CONFIG_HOME", config.toLocal8Bit());
-        // the single-instance socket (Instance) and the browsers the instance checks start stay in here too
-        const QString runtime = shotData->path() + QStringLiteral("/runtime");
+        // the single-instance socket (Instance) and the browsers the instance checks start stay in here too;
+        // tools/check-engine may give one of its own (CHECK_RUNTIME_DIR) holding the sound check's sound server
+        const QString runtime = qEnvironmentVariableIsEmpty("CHECK_RUNTIME_DIR") ? shotData->path() + QStringLiteral("/runtime")
+                                                                                : qEnvironmentVariable("CHECK_RUNTIME_DIR");
         if (!QDir().mkpath(runtime) || !QFile::setPermissions(runtime, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner)) {
             std::fprintf(stderr, "browser --check-engine: cannot make a runtime dir\n");
             return 2;
         }
         qputenv("XDG_RUNTIME_DIR", runtime.toLocal8Bit());
+        // a sound server there (tools/check-engine's: PipeWire with one silent speaker and no devices) takes the pages'
+        // sound where a desktop's would be, $XDG_RUNTIME_DIR/pulse/native, so the sound check can hear it leave Thyris;
+        // with none, media plays into Chromium's silent sink
+        const bool soundServer = QFile::exists(runtime + QStringLiteral("/pulse/native"));
         // the loading checks' hosts (EngineCheck::serve): any name under .test is this machine, and none
         // under .invalid exists, so no check looks a name up on the network; media asks get fake devices,
         // so nothing the checks allow reaches a real microphone or camera
@@ -105,8 +111,9 @@ int main(int argc, char *argv[]) {
         // here, so the site panel's check can load one (PLAN.md 3.9, mixed content)
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS", qgetenv("QTWEBENGINE_CHROMIUM_FLAGS")
                 + " --host-resolver-rules=\"MAP *.invalid ~NOTFOUND, MAP *.test 127.0.0.1\" --use-fake-device-for-media-stream"
-                // media plays into a silent sink: a check's page never sounds on the owner's speakers (2026-10-15)
-                + " --disable-audio-output"
+                // a check's page never sounds on the owner's speakers (2026-10-15): the check's own sound server, or
+                // a silent sink
+                + (soundServer ? "" : " --disable-audio-output")
                 + " --disable-features=AutoupgradeMixedContent");
         // No session bus, compositor or X server: a screen-share or passkey check can then reach no
         // portal picker, device or notification on the desktop. Offscreen needs none of them.

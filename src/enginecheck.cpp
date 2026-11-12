@@ -706,6 +706,60 @@ qint64 EngineCheck::pid() const {
     return QCoreApplication::applicationPid();
 }
 
+QVariantList EngineCheck::soundStreams() const {
+    QProcess pactl;
+    pactl.start(QStringLiteral("pactl"), {QStringLiteral("-f"), QStringLiteral("json"), QStringLiteral("list"), QStringLiteral("sink-inputs")});
+    if (!pactl.waitForFinished(5000) || pactl.exitStatus() != QProcess::NormalExit || pactl.exitCode() != 0)
+        return {};
+    // CEF plays from its audio service, a process under this one: up the parents from the stream's process
+    const auto ours = [](qint64 pid) {
+        for (int hops = 0; pid > 1 && hops < 16; hops++) {
+            if (pid == QCoreApplication::applicationPid())
+                return true;
+            QFile stat(QStringLiteral("/proc/%1/stat").arg(pid));
+            if (!stat.open(QIODevice::ReadOnly))
+                return false;
+            // "pid (name) state ppid ...", and the name may hold spaces and parentheses
+            const QByteArray s = stat.readAll();
+            pid = s.mid(s.lastIndexOf(')') + 2).split(' ').value(1).toLongLong();
+        }
+        return false;
+    };
+    QVariantList out;
+    const QJsonArray streams = QJsonDocument::fromJson(pactl.readAllStandardOutput()).array();
+    for (const QJsonValue &v : streams) {
+        const QJsonObject s = v.toObject(), p = s.value(QStringLiteral("properties")).toObject();
+        const qint64 pid = p.value(QStringLiteral("application.process.id")).toString().toLongLong();
+        out.append(QVariantMap{{QStringLiteral("app"), p.value(QStringLiteral("application.name")).toString()},
+                               {QStringLiteral("pid"), pid},
+                               {QStringLiteral("fromThyris"), ours(pid)},
+                               {QStringLiteral("muted"), s.value(QStringLiteral("mute")).toBool()},
+                               {QStringLiteral("corked"), s.value(QStringLiteral("corked")).toBool()}});
+    }
+    return out;
+}
+
+qreal EngineCheck::soundLevel(int ms) const {
+    QProcess parec;
+    parec.start(QStringLiteral("parec"), {QStringLiteral("--raw"), QStringLiteral("--latency-msec=20"), QStringLiteral("--format=s16le"),
+                                          QStringLiteral("--channels=1"), QStringLiteral("--rate=16000"),
+                                          QStringLiteral("--device=check_speaker.monitor")});
+    if (!parec.waitForStarted(2000))
+        return -1;
+    // SIGINT, not QProcess's SIGTERM: parec hands over what it has recorded before it goes
+    if (!parec.waitForFinished(ms))
+        ::kill(pid_t(parec.processId()), SIGINT);
+    parec.waitForFinished(2000);
+    const QByteArray raw = parec.readAllStandardOutput();
+    if (raw.size() < 2)
+        return -1;
+    const auto *samples = reinterpret_cast<const qint16 *>(raw.constData());
+    int peak = 0;
+    for (qsizetype i = 0; i < raw.size() / 2; i++)
+        peak = std::max(peak, std::abs(int(samples[i])));
+    return peak / 32768.0;
+}
+
 bool EngineCheck::staleSocket(const QString &path) {
     // only ever under the throwaway XDG_RUNTIME_DIR main.cpp sets in check mode
     const QByteArray file = QFile::encodeName(path);

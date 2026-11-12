@@ -153,6 +153,12 @@ public:
     Q_INVOKABLE void launch(const QStringList &args, const QVariantMap &env = {}, bool viaShell = false, const QString &dir = QString());
     Q_INVOKABLE QVariantMap launched() const { return m_launched; }
     Q_INVOKABLE qint64 pid() const;
+    // The check's own sound server (tools/check-engine starts it in this process's XDG_RUNTIME_DIR, with one speaker,
+    // a null sink called check_speaker): its playback streams, each { app, pid, fromThyris (opened by this process or
+    // one under it), muted, corked }; and the loudest sample that speaker plays in the next `ms`, 0 to 1 (-1: nothing
+    // could be recorded). Sound that reaches it is sound that left Thyris.
+    Q_INVOKABLE QVariantList soundStreams() const;
+    Q_INVOKABLE qreal soundLevel(int ms) const;
     // A socket file at `path` that nothing listens on, as a browser that did not quit cleanly leaves one.
     Q_INVOKABLE bool staleSocket(const QString &path);
     // `object`'s property `name`, a dynamic one (QObject::setProperty) too, which QML cannot read: Windows.showAs's appId.
