@@ -4047,7 +4047,7 @@ Window {
             const v = views[id];
             if (!v)
                 continue;
-            const fields = { state: "unloaded", loading: false, audible: false };
+            const fields = { state: "unloaded", loading: false, audible: false, muted: false };
             if (String(v.url) !== "" && !v.parked)
                 fields.restore = { history: Windows.history(v), scroll: null };
             sessionModel.update(id, fields);
@@ -4215,8 +4215,10 @@ Window {
             return;
         }
         close.accepted = false;
-        // the last main window, a private window still open: it waits hidden as a quit would keep it (setAside)
-        if (hub.privateWindows.length > 0) {
+        // the last main window, a private window still open or a file still coming, which quitting would cancel: it waits
+        // hidden as a quit would keep it (setAside), and the browser quits once the file lands, fails or is cancelled
+        // (lastWindowGone)
+        if (hub.privateWindows.length > 0 || downloadModel.coming) {
             setAside();
             return;
         }
@@ -4259,7 +4261,7 @@ Window {
             if (root.visible)
                 return;
             for (const id in views)
-                sessionModel.update(id, { state: "unloaded", loading: false, audible: false });
+                sessionModel.update(id, { state: "unloaded", loading: false, audible: false, muted: false });
             dropViews(Object.keys(views), true);
         });
     }

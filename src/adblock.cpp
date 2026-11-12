@@ -288,8 +288,22 @@ static void *buildEngine(const QString &dataDir, QVariantList *lists, bool build
 
 Adblock::Adblock(const QString &dataDir, QObject *parent) : QObject(parent), m_dataDir(dataDir) {
     m_script = QCoreApplication::applicationDirPath() + QStringLiteral("/../tools/update-lists");
-    // with uBlock Origin Lite blocking nothing asks the engine (requestFilter unset, cosmetic() empty)
+    // with uBlock Origin Lite blocking no request asks the engine (requestFilter unset), but YouTube's pages still take its
+    // cosmetics (cosmetic()): it is built off the UI thread then, so the window does not wait for it, and only where there are lists
     m_engine = buildEngine(dataDir, &m_lists, !extensionBlocks);
+    if (extensionBlocks && !m_lists.isEmpty())
+        m_builder = std::thread([this, dataDir] {
+            QVariantList lists;
+            void *engine = buildEngine(dataDir, &lists);
+            QMetaObject::invokeMethod(this, [this, engine] {
+                EngineLock lock;
+                void *old = m_engine;
+                m_engine = engine;
+                for (AdblockInterceptor *interceptor : std::as_const(m_interceptors))
+                    interceptor->setEngine(engine);
+                ab_drop(old);
+            }, Qt::QueuedConnection);
+        });
 }
 
 Adblock::~Adblock() {

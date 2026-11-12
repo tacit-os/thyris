@@ -2229,6 +2229,13 @@ public:
         const QUrl origin(QString::fromStdString(browser->GetMainFrame()->GetURL().ToString()));
         toItem([on, origin](PageItem *item) { item->fullScreenChanged(on, origin); });
     }
+    // a camera, microphone or screen the page opened or closed (BrowserView: the row's "mic" and "camera" go with them)
+    void OnMediaAccessChange(CefRefPtr<CefBrowser>, bool video, bool audio) override {
+        toItem([access = (video ? 1 : 0) | (audio ? 2 : 0)](PageItem *item) {
+            if (std::exchange(item->m_mediaAccess, access) != access)
+                emit item->mediaAccessChanged();
+        });
+    }
     void OnTitleChange(CefRefPtr<CefBrowser> browser, const CefString &text) override {
         if (creationOver(browser->GetMainFrame()->GetURL()))
             return;
@@ -3639,6 +3646,8 @@ void PageItem::setLifecycleState(int state) {
             emit renderProcessPidChanged();
         }
         setUnresponsive(false);
+        if (std::exchange(m_mediaAccess, 0) != 0)
+            emit mediaAccessChanged();
         if (std::exchange(m_loading, false))
             emit loadingChanged({{QStringLiteral("status"), 1}, {QStringLiteral("url"), m_url}});
         update();

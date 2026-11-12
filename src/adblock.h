@@ -29,7 +29,8 @@ public:
     // (YouTube's pages excepted: cosmetic())
     static inline bool extensionBlocks = false;
 
-    bool ready() const { return m_engine != nullptr; }
+    // this blocker refuses requests and gives every page its cosmetics; not with uBlock Origin Lite, whatever the engine
+    bool ready() const { return m_engine != nullptr && !extensionBlocks; }
     // Installs a request interceptor on a WebEngineProfile, one of its own for each profile: a private window's
     // (PLAN.md 3.14) has its own counts and Allowed sites, which go with that profile. `profile` below is one given
     // here; null is the first, the main profile.

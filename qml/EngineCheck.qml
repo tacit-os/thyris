@@ -679,6 +679,10 @@ QtObject {
           expect: () => view.ask && view.ask.types.join() === "microphone", page: "log.join()", pageExpect: v => v === "" },
         { name: "(Allow once: it records again)", wait: 800, act: () => { probe.press(Qt.Key_F6, 0); probe.press(Qt.Key_Return, 0) },
           expect: () => !view.ask && session.current.capturing === "mic", page: "s.getTracks()[0].readyState", pageExpect: v => v === "live" },
+        // CEF says when the page closes a device (PageItem.mediaAccess); Qt WebEngine does not, and keeps the mark until a reload
+        { name: "the page stops its microphone: the mark goes (CEF)", wait: 800, focus: "s.getTracks().forEach(t => t.stop())",
+          expect: () => view.mediaAccess === undefined || session.current.capturing === "" && view.inUse.length === 0,
+          page: "s.getTracks()[0].readyState", pageExpect: v => v === "ended" },
         { name: "(a page of that other origin)", wait: 1500, act: () => app.go("http://localhost:" + check.port + "/plain", "navigate"),
           expect: () => view.title === "plain" && !view.loading && session.current.capturing === "" },
         { name: "(this origin again)", wait: 1500, act: () => app.go(check.local("/asks"), "navigate"), expect: () => view.title === "asks" && !view.loading },

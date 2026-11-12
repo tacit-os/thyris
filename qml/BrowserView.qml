@@ -767,7 +767,8 @@ WebEngineView {
         for (const name of ["adblock-scriptlets", "adblock-hide"])
             for (const script of userScripts.find(name))
                 userScripts.remove(script)
-        if (!adblock || !adblock.ready)
+        // not `ready`: with uBlock Origin Lite this blocker is not, but YouTube's pages still take its cosmetics
+        if (!adblock)
             return
         const c = adblock.cosmetic(String(url), profile)
         if (c.script) {
@@ -1003,6 +1004,26 @@ WebEngineView {
         inUse = [];
         session.update(pageId, { capturing: "" });
     }
+    // CEF says when the page closes a device it had open (PageItem.mediaAccess: 1 video, 2 audio; Qt WebEngine says nothing):
+    // a call hung up takes "mic" and "camera" off its row. A grant whose device never opened keeps its glyph, as does the
+    // screen, which CEF may not count as video.
+    property int mediaOpen: 0
+    Connections {
+        target: view
+        ignoreUnknownSignals: true
+        function onMediaAccessChanged() {
+            const closed = view.mediaOpen & ~view.mediaAccess;
+            view.mediaOpen = view.mediaAccess;
+            view.stopUse([].concat(closed & 1 ? ["camera"] : [], closed & 2 ? ["microphone"] : []));
+        }
+    }
+    function stopUse(types) {
+        const left = inUse.filter(t => types.indexOf(t) < 0);
+        if (left.length === inUse.length)
+            return;
+        inUse = left;
+        session.update(pageId, { capturing: Asks.glyphs(left)[0] ?? "" });
+    }
 
     // What an answer does: AskSection's choice (Asks.view) and its data ({ picked, <field>: text }).
     function answer(a, choice, data) {
@@ -1091,6 +1112,13 @@ WebEngineView {
             break;
         }
         remove(a);
+    }
+    // A choice made in the site panel (SiteInfo.set) answers the site's next ask of that type, not this load's answer.
+    // Chromium itself keeps the prompts' answers (location, notifications, ...) until the next load (forgetAnswers).
+    function forgetAnswer(origin, type) {
+        delete thisLoad[origin + " " + type];
+        if (keptLoad)
+            delete keptLoad.thisLoad[origin + " " + type];
     }
     // An answer for this page load settles every waiting permission ask it covers.
     function decide(origin, types, value) {

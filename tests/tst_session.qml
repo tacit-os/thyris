@@ -341,6 +341,28 @@ TestCase {
         compare(r.pages[ids[1]].state, "unloaded", "nothing is loaded after a restart");
     }
 
+    // a page's mute is its view's (BrowserView writes it from audioMuted), and a new view starts with sound: once the view
+    // goes, the row no longer says "muted"
+    function test_aMuteGoesWithItsView() {
+        const [s, t, ids] = withThread("t", ["one", "two"]);
+        s.update(ids[0], { state: "live", muted: true });
+        s.save();
+        const r = make();
+        r.load();
+        compare(r.pages[ids[0]].muted, false, "after a restart");
+        s.update(ids[0], { muted: true });
+        s.fileThread(t);
+        compare(s.pages[ids[0]].muted, false, "filed");
+        const a = s.addAlways("https://mail.example/", "mail", "");
+        s.update(a, { state: "live", muted: true });
+        s.closeAlways(a);
+        compare(s.pages[a].muted, false, "a pin closed");
+        const [w, u, two] = withThread("u", ["three", "four"]);
+        w.update(two[0], { state: "live", muted: true });
+        w.closeWindow("", {});
+        compare(w.pages[two[0]].muted, false, "its window closed");
+    }
+
     // PLAN.md 8d: records survive a restart; Qt WebEngine cancelled what was still coming, so those failed
     // ("browser closed", Retry fetches again), and a held insecure file was never wanted
     function test_downloadsAfterARestart() {

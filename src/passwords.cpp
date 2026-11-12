@@ -301,9 +301,15 @@ bool Passwords::plainKeyring(const QString &collection) {
             name += id[i];
         }
     }
-    QFile file(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + QStringLiteral("/keyrings/")
-               + QString::fromUtf8(name) + QStringLiteral(".keyring"));
-    if (!file.open(QIODevice::ReadOnly))
+    // gnome-keyring keeps it under the data folder Thyris was started with, which main.cpp keeps in THYRIS_OUTER_XDG_DATA_HOME
+    // when it moves XDG_DATA_HOME into opsis-cef; the checks' throwaway keyring file is under XDG_DATA_HOME itself
+    QFile file;
+    for (const QString &data : {qEnvironmentVariable("THYRIS_OUTER_XDG_DATA_HOME"), QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)}) {
+        file.setFileName(data + QStringLiteral("/keyrings/") + QString::fromUtf8(name) + QStringLiteral(".keyring"));
+        if (!data.isEmpty() && file.open(QIODevice::ReadOnly))
+            break;
+    }
+    if (!file.isOpen())
         return false;
     static const QByteArray magic("GnomeKeyring\n\r\0\n", 16);
     return !file.read(magic.size()).startsWith(magic);

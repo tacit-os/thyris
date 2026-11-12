@@ -194,7 +194,7 @@ QtObject {
         t.filedAt = Date.now();
         delete t.open;
         for (const id of t.pages)
-            Object.assign(pages[id], { state: "unloaded", loading: false, audible: false });
+            Object.assign(pages[id], { state: "unloaded", loading: false, audible: false, muted: false });
         closed.push({ thread: threadId, title: t.title, filed: true });
         if (current && current.thread === threadId)
             currentPage = mostRecentPage() ?? "";
@@ -391,7 +391,7 @@ QtObject {
                 t.filedAt = Date.now();
                 delete t.open;
                 for (const id of t.pages)
-                    Object.assign(pages[id], { state: "unloaded", loading: false, audible: false });
+                    Object.assign(pages[id], { state: "unloaded", loading: false, audible: false, muted: false });
                 filed.push(t.id);
             } else {
                 const p = pages[t.pages[0]];
@@ -542,7 +542,7 @@ QtObject {
         p.url = homeOf(pageId);
         delete p.homing;
         delete p.restore;
-        Object.assign(p, { state: "unloaded", loading: false, audible: false });
+        Object.assign(p, { state: "unloaded", loading: false, audible: false, muted: false });
         if (currentPage === pageId)
             currentPage = mostRecentPage() ?? "";
         touch();
@@ -872,7 +872,7 @@ QtObject {
             t.pages.forEach(id => held.add(id));
         for (const id in pages)
             if (held.has(id))
-                Object.assign(pages[id], { state: "unloaded", loading: false, audible: false, needsYou: false, asking: "", capturing: "", failed: "", downloading: false });
+                Object.assign(pages[id], { state: "unloaded", loading: false, audible: false, muted: false, needsYou: false, asking: "", capturing: "", failed: "", downloading: false });
             else
                 delete pages[id];
         closed = s.closed ?? [];

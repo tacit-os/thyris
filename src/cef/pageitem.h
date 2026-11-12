@@ -78,6 +78,9 @@ class PageItem : public QQuickItem {
     // the page's sound muted (the rail's mute, Ctrl+M, a site's Sound set to Block); kept across a discard, which closes the
     // page and applies it again to the page made anew
     Q_PROPERTY(bool audioMuted READ audioMuted WRITE setAudioMuted NOTIFY audioMutedChanged)
+    // the page's open devices as CEF tells them (CefDisplayHandler::OnMediaAccessChange): 1 a video source, 2 an audio one;
+    // 0 once it is discarded
+    Q_PROPERTY(int mediaAccess READ mediaAccess NOTIFY mediaAccessChanged)
     // Qt's LifecycleState: 0 active, 1 frozen (kept as active here), 2 discarded: the page closes (its process and
     // memory freed) and keeps its address, title and back/forward list; active again, it is made anew from that list
     // (Opsis's history patch) or loads its address afresh
@@ -141,6 +144,7 @@ public:
     bool unresponsive() const { return m_unresponsive; }
     void setUnresponsive(bool on);
     bool audioMuted() const { return m_audioMuted; }
+    int mediaAccess() const { return m_mediaAccess; }
     void setAudioMuted(bool muted);
     int lifecycleState() const { return m_lifecycle; }
     void setLifecycleState(int state);
@@ -250,6 +254,7 @@ signals:
     void renderProcessPidChanged();
     void unresponsiveChanged();
     void audioMutedChanged();
+    void mediaAccessChanged();
     void lifecycleStateChanged();
     void devToolsViewChanged();
     void inspectedViewChanged();
@@ -343,6 +348,7 @@ private:
     qint64 m_renderPid = 0;
     bool m_unresponsive = false;
     bool m_audioMuted = false;
+    int m_mediaAccess = 0;
     int m_lifecycle = 0;
     QUrl m_givenUrl;            // loadHtml before the page is made: handed to its client in openNow
     QByteArray m_givenHtml;

@@ -81,7 +81,7 @@ QtObject {
     onOriginChanged: if (open) { lookUp(); poll() }
 
     // A row's choice. Ads and trackers reloads the page, which starts its count again; sound and zoom reach
-    // the site's pages at once; the others apply to what the site asks next.
+    // the site's pages at once; the others apply to what the site asks next, over an Allow once or Deny of this page load.
     function set(type, value) {
         sites.setChoice(origin, type, value);
         expand = "";
@@ -90,6 +90,9 @@ QtObject {
         else if (type === "sound")
             for (const v of viewsOf(origin))
                 v.muteForSite(value === "block");
+        else
+            for (const v of viewsOf(origin))
+                v.forgetAnswer(origin, type);
     }
     function setZoom(z) {
         if (!origin)

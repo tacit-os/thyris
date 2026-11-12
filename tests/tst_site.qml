@@ -35,6 +35,9 @@ TestCase {
             function forceActiveFocus() {}
             // BrowserView's: it also unmutes only what the site muted (checked in the engine check)
             function muteForSite(block) { audioMuted = block }
+            // this page load's answers the panel's choices replaced
+            property var forgot: []
+            function forgetAnswer(origin, type) { forgot = forgot.concat([origin + " " + type]) }
         }
     }
 
@@ -183,6 +186,8 @@ TestCase {
         t.info.set("microphone", "block");
         compare(t.sites.choice("https://www.youtube.com", "microphone"), "block");
         compare(t.info.expand, "", "a pick folds the choices");
+        compare(t.view.forgot, ["https://www.youtube.com microphone"], "this load's Allow once or Deny gives way to the choice");
+        compare(t.other.forgot, ["https://www.youtube.com microphone"], "on every page of the site");
         t.info.set("ads", "allow");
         compare(t.view.reloads, 1, "Ads and trackers reloads the page, which starts its count again");
         t.info.set("sound", "block");

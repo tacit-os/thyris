@@ -603,12 +603,14 @@ namespace {
 // The Firefox family on Linux: where each keeps profiles.ini (native, then Flatpak and Snap) and its desktop entries' names
 struct Fox {
     const char *name, *icon, *entries;
-    QStringList roots;      // under the home folder; Zen's ~/.config/zen first (Zen 1.x), ~/.zen before it
+    QStringList roots;      // under the home folder; Zen's ~/.config/zen first (Zen 1.x), ~/.zen before it; Firefox's
+                            // ~/.mozilla/firefox, which it keeps using where it is, then ~/.config/mozilla/firefox (Firefox 147's)
 };
 const QList<Fox> &family() {
     static const QList<Fox> list = {
         {"Zen", "zen-browser", "zen*.desktop", {QStringLiteral(".config/zen"), QStringLiteral(".zen"), QStringLiteral(".var/app/app.zen_browser.zen/.zen")}},
-        {"Firefox", "firefox", "firefox*.desktop", {QStringLiteral(".mozilla/firefox"), QStringLiteral(".var/app/org.mozilla.firefox/.mozilla/firefox"),
+        {"Firefox", "firefox", "firefox*.desktop", {QStringLiteral(".mozilla/firefox"), QStringLiteral(".config/mozilla/firefox"),
+                                                    QStringLiteral(".var/app/org.mozilla.firefox/.mozilla/firefox"),
                                                     QStringLiteral("snap/firefox/common/.mozilla/firefox")}},
         {"LibreWolf", "librewolf", "librewolf*.desktop", {QStringLiteral(".librewolf"), QStringLiteral(".var/app/io.gitlab.librewolf-community/.librewolf")}},
         {"Floorp", "floorp", "floorp*.desktop", {QStringLiteral(".floorp"), QStringLiteral(".var/app/one.ablaze.floorp/.floorp")}},
