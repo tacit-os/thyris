@@ -22,9 +22,15 @@ fi
 if [ "$what" = cef ] || [ "$what" = both ]; then
     groups=${*:-$(grep -o '{ group: "[a-zA-Z]*" }' ~/opsis/browser/qml/EngineCheck.qml | sed 's/.*"\(.*\)".*/\1/' | tr '\n' ' ')}
     start=$(date +%s)
-    run "cmake -S . -B build-cef -G Ninja -DCMAKE_BUILD_TYPE=Release -DBROWSER_ENGINE=cef -DCEF_ROOT=/work/cef >/dev/null && cmake --build build-cef -j8 --target browser browser-page 2>&1 | grep -E 'error|FAILED'; for g in $groups; do QT_FORCE_STDERR_LOGGING=1 timeout 300 build-cef/browser --check-engine \$g; done" > ~/opsis/logs/cef.log 2>&1
-    awk -v s=$(( $(date +%s) - start )) '/^ok/ { ok++ } /^FAIL/ { failed++ } /^FAIL timed out at step/ { cut++ }
+    # a build that fails stops here: the checks used to run the browser an earlier build left in build-cef, so a
+    # change that did not build was checked as the old code (2026-11-13: no Qt WebSockets in the image, the old
+    # browser had no "sound" group, and the run said 0 checks, 0 failed, exit 0). A group's own exit is kept too.
+    run "cmake -S . -B build-cef -G Ninja -DCMAKE_BUILD_TYPE=Release -DBROWSER_ENGINE=cef -DCEF_ROOT=/work/cef > /work/logs/cef-configure.log 2>&1 || { tail -20 /work/logs/cef-configure.log; echo 'BUILD FAILED: cmake'; exit 3; }
+         cmake --build build-cef -j8 --target browser browser-page > /work/logs/cef-build.log 2>&1 || { grep -E 'error|FAILED' /work/logs/cef-build.log | tail -20; echo 'BUILD FAILED: cmake --build'; exit 3; }
+         for g in $groups; do QT_FORCE_STDERR_LOGGING=1 timeout 300 build-cef/browser --check-engine \$g; rc=\$?; [ \$rc = 0 ] || echo \"FAIL group \$g ended with exit \$rc\"; done" > ~/opsis/logs/cef.log 2>&1
+    rc=$?
+    awk -v s=$(( $(date +%s) - start )) '/^ok/ { ok++ } /^FAIL/ || /^no group / || /^BUILD FAILED/ { failed++ } /^FAIL timed out at step/ { cut++ }
         END { printf "== %d checks, %d failed, %d s (%d groups cut short at a step that never answered)\n", ok + failed, failed, s, cut }' ~/opsis/logs/cef.log >> ~/opsis/logs/cef.log
-    echo "exit 0" >> ~/opsis/logs/cef.log
+    echo "exit $rc" >> ~/opsis/logs/cef.log
 fi
 echo done > ~/opsis/logs/state

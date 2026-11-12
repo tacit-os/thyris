@@ -11,7 +11,7 @@ sudo sysctl -q --system
 cat > Dockerfile <<DOCKER
 FROM archlinux:latest
 RUN pacman -Syu --noconfirm --needed base-devel cmake ninja git rust \
-    qt6-base qt6-declarative qt6-webengine qt6-webchannel qt6-shadertools qt6-svg qt6-imageformats \
+    qt6-base qt6-declarative qt6-webengine qt6-webchannel qt6-websockets qt6-shadertools qt6-svg qt6-imageformats \
     cups sqlite nss openssl dbus gnome-keyring libsecret hunspell fontconfig ttf-liberation noto-fonts \
     gtk3 alsa-lib at-spi2-core libdrm libxkbcommon libxcomposite libxdamage libxrandr mesa pango cairo libglvnd \
     python procps-ng which unzip bzip2 && pacman -Scc --noconfirm
