@@ -59,6 +59,9 @@ PageItem {
     property int webChannelWorld: 0                         // always Opsis's world on CEF
 
     property int recommendedState: 0
+    // CEF says a page is playing only through CefAudioHandler, which takes the sound off the speakers (its loopback
+    // stream mutes the source), so the playing mark is not shown on CEF
+    property bool recentlyAudible: false
 
     // Qt's error pages switch (BrowserView turns it off for an https attempt, so the attempt leaves no history entry)
     Connections {

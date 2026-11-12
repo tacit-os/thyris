@@ -78,8 +78,6 @@ class PageItem : public QQuickItem {
     // the page's sound muted (the rail's mute, Ctrl+M, a site's Sound set to Block); kept across a discard, which closes the
     // page and applies it again to the page made anew
     Q_PROPERTY(bool audioMuted READ audioMuted WRITE setAudioMuted NOTIFY audioMutedChanged)
-    // the page has a sound stream open (CefAudioHandler: a copy of what plays is offered to Thyris, the speakers still get it)
-    Q_PROPERTY(bool recentlyAudible READ recentlyAudible NOTIFY recentlyAudibleChanged)
     // Qt's LifecycleState: 0 active, 1 frozen (kept as active here), 2 discarded: the page closes (its process and
     // memory freed) and keeps its address, title and back/forward list; active again, it is made anew from that list
     // (Opsis's history patch) or loads its address afresh
@@ -144,8 +142,6 @@ public:
     void setUnresponsive(bool on);
     bool audioMuted() const { return m_audioMuted; }
     void setAudioMuted(bool muted);
-    bool recentlyAudible() const { return m_audible; }
-    void audibleChecked();              // PageClient: its sound streams opened or closed
     int lifecycleState() const { return m_lifecycle; }
     void setLifecycleState(int state);
     bool isFullScreen() const { return m_fullScreen; }
@@ -254,7 +250,6 @@ signals:
     void renderProcessPidChanged();
     void unresponsiveChanged();
     void audioMutedChanged();
-    void recentlyAudibleChanged();
     void lifecycleStateChanged();
     void devToolsViewChanged();
     void inspectedViewChanged();
@@ -348,7 +343,6 @@ private:
     qint64 m_renderPid = 0;
     bool m_unresponsive = false;
     bool m_audioMuted = false;
-    bool m_audible = false;
     int m_lifecycle = 0;
     QUrl m_givenUrl;            // loadHtml before the page is made: handed to its client in openNow
     QByteArray m_givenHtml;

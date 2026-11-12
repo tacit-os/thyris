@@ -862,8 +862,7 @@ private:
 class PageClient : public CefClient, public CefRenderHandler, public CefLifeSpanHandler, public CefLoadHandler,
                    public CefDisplayHandler, public CefDevToolsMessageObserver, public CefKeyboardHandler,
                    public CefFocusHandler, public CefContextMenuHandler, public CefRequestHandler, public CefJSDialogHandler,
-                   public CefFindHandler, public CefDialogHandler, public CefDownloadHandler, public CefPermissionHandler,
-                   public CefAudioHandler {
+                   public CefFindHandler, public CefDialogHandler, public CefDownloadHandler, public CefPermissionHandler {
 public:
     PageClient(PageItem *item, std::shared_ptr<PageFrames> frames, std::shared_ptr<PageFrames> popup)
         : m_item(item), m_frames(std::move(frames)), m_popup(std::move(popup)) {}
@@ -1155,21 +1154,6 @@ public:
     CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
     CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
     CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
-    CefRefPtr<CefAudioHandler> GetAudioHandler() override { return this; }
-
-    // The page's sound, for Qt's recentlyAudible (the rail's ♪ and its mute): CEF offers a copy of what plays and the page
-    // still plays to the speakers; the packets are not used, only whether a stream is open. A stream that ends with an
-    // error is counted closed too.
-    void OnAudioStreamStarted(CefRefPtr<CefBrowser>, const CefAudioParameters &, int) override { audioStreams(1); }
-    void OnAudioStreamPacket(CefRefPtr<CefBrowser>, const float **, int, int64_t) override {}
-    void OnAudioStreamStopped(CefRefPtr<CefBrowser>) override { audioStreams(-1); }
-    void OnAudioStreamError(CefRefPtr<CefBrowser>, const CefString &) override { audioStreams(-1); }
-    bool audible() const { return m_streams.load() > 0; }
-    void audioStreams(int change) {
-        int now = m_streams.load();
-        while (!m_streams.compare_exchange_weak(now, qMax(0, now + change))) {}
-        toItem([](PageItem *item) { item->audibleChecked(); });
-    }
     CefRefPtr<CefDialogHandler> GetDialogHandler() override { return this; }
     CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
 
@@ -2428,7 +2412,6 @@ private:
 
     QMutex m_lock;
     PageItem *m_item;
-    std::atomic<int> m_streams{0};  // the page's open sound streams (audioStreams)
     std::vector<std::pair<std::string, uint32_t>> m_answered;  // prompts answered in this page load: origin, kinds (forgetAnswers)
     bool m_errorPagesOff = false;                               // setErrorPages
     bool m_navigated = false;       // a main-frame navigation seen (CEF's UI thread): the first may be the page's creation
@@ -3500,12 +3483,6 @@ void PageItem::setAudioMuted(bool muted) {
     emit audioMutedChanged();
 }
 
-void PageItem::audibleChecked() {
-    const bool audible = m_client && m_client->audible();
-    if (std::exchange(m_audible, audible) != audible)
-        emit recentlyAudibleChanged();
-}
-
 void PageItem::waitForPage() {
     if (m_client)
         m_client->waitForPage();
@@ -3662,7 +3639,6 @@ void PageItem::setLifecycleState(int state) {
             emit renderProcessPidChanged();
         }
         setUnresponsive(false);
-        audibleChecked();
         if (std::exchange(m_loading, false))
             emit loadingChanged({{QStringLiteral("status"), 1}, {QStringLiteral("url"), m_url}});
         update();
