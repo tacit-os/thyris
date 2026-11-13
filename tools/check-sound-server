@@ -1,0 +1,33 @@
+#!/bin/bash
+# tools/check-sound-server <dir>: the sound group's own sound server in <dir>, for tools/check-engine and the cloud's CEF
+# run (tools/cloud/run.sh), which starts the browser itself. PipeWire, WirePlumber with no device monitors, and
+# pipewire-pulse, in a private runtime dir that becomes the browser's (CHECK_RUNTIME_DIR=<dir>), with one speaker, a null
+# sink called check_speaker. A page's sound goes where it would on a desktop, $XDG_RUNTIME_DIR/pulse/native, is recorded
+# there, and never reaches a real device. The daemons get that dir as their home and only the stock configs, so none of
+# this machine's own (a tuned speaker chain in ~/.config/pipewire) is loaded. Their pids go to <dir>/pids; it exits 1,
+# saying so, when the server does not start (the cloud image had no PipeWire, and the group heard nothing, 2026-11-13).
+set -u
+snd=${1:?usage: check-sound-server <dir>}
+mkdir -p "$snd/wireplumber/wireplumber.conf.d"
+printf '%s\n' 'wireplumber.profiles = { main = { monitor.alsa = disabled, monitor.alsa-midi = disabled,' \
+    'monitor.bluez = disabled, monitor.bluez-midi = disabled, monitor.v4l2 = disabled, monitor.libcamera = disabled } }' \
+    > "$snd/wireplumber/wireplumber.conf.d/check.conf"
+envs=(-u DBUS_SESSION_BUS_ADDRESS -u DISPLAY -u WAYLAND_DISPLAY -u PIPEWIRE_REMOTE -u PULSE_SERVER -u PIPEWIRE_RUNTIME_DIR
+    HOME="$snd" XDG_RUNTIME_DIR="$snd" XDG_CONFIG_HOME="$snd/config" XDG_STATE_HOME="$snd/state"
+    PIPEWIRE_CONFIG_DIR=/usr/share/pipewire WIREPLUMBER_CONFIG_DIR="$snd/wireplumber:/usr/share/wireplumber")
+alone() { env "${envs[@]}" "$@"; }
+# a daemon in the background whose pid is its own: a backgrounded function is a subshell, and killing that left
+# PipeWire running after the checks (2026-11-13)
+daemon() { local log=$1; shift; ( exec env "${envs[@]}" "$@" ) >"$log" 2>&1 & }
+for t in pipewire wireplumber pipewire-pulse pactl; do
+    command -v "$t" >/dev/null || { echo "check-sound-server: $t is not installed: the sound group cannot hear anything" >&2; exit 1; }
+done
+daemon "$snd/pipewire.log" pipewire; pids=$!
+for i in $(seq 50); do [ -S "$snd/pipewire-0" ] && break; sleep 0.1; done
+daemon "$snd/wireplumber.log" wireplumber; pids="$pids $!"
+daemon "$snd/pulse.log" pipewire-pulse; pids="$pids $!"
+echo "$pids" > "$snd/pids"
+for i in $(seq 50); do [ -S "$snd/pulse/native" ] && break; sleep 0.1; done
+alone pactl load-module module-null-sink sink_name=check_speaker sink_properties=device.description=check-speaker >/dev/null \
+    && alone pactl set-default-sink check_speaker \
+    || { echo "check-sound-server: the sound server did not start (pipewire, wireplumber, pipewire-pulse, pactl): see $snd/*.log" >&2; exit 1; }
