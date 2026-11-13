@@ -93,12 +93,13 @@ TestCase {
         compare(Downloads.reason(999), "download error");
     }
 
-    // the frames of 8d: at rest "camss-v3.mbox 40 %"; with the pointer on it the size, time left and bar
+    // the frames of 8d: at rest "camss-v3.mbox 40 %"; with the pointer on it the size, time left and bar; the row's face
+    // is the file's kind (PLAN.md 3.23)
     function test_running() {
         const v = Downloads.parts(record({ received: 3.36e6, left: 12 }), 0);
-        compare(v.glyph, "download");
+        compare(v.glyph, "mail", "an .mbox");
         compare(v.detail, "40 %");
-        compare(v.info, "3.4 of 8.4 MB · 12 s");
+        compare(v.info, "3.4 of 8.4 MB · 12 s left");
         compare(v.progress, 0.4);
         compare(v.note, "");
     }
@@ -112,23 +113,23 @@ TestCase {
     function test_paused() {
         const v = Downloads.parts(record({ state: "paused", received: 2.1e6, left: 30 }), 0);
         compare(v.detail, "Paused");
-        compare(v.info, "2.1 of 8.4 MB · Paused");
+        compare(v.info, "Paused · 2.1 of 8.4 MB");
     }
     function test_finished() {
         const v = Downloads.parts(record({ state: "done", received: 8.4e6, finished: at(14, 20) }), at(15, 0));
-        compare(v.glyph, "check");
+        compare(v.glyph, "mail", "still its kind once it landed");
         compare(v.detail, "");
         compare(v.info, "8.4 MB · 14:20");
     }
     function test_failuresAndWarnings() {
         const failed = Downloads.parts(record({ state: "failed", reason: "network" }), 0);
-        compare(failed.note, "Failed: network");
+        compare(failed.note, "The connection dropped.", "what happened, in a sentence");
         compare(failed.failed, "error", "in the error tone");
-        compare(failed.glyph, "warning");
+        compare(failed.glyph, "mail", "its kind, the tone marks the failure");
         const program = Downloads.parts(record({ state: "done", warn: "program", file: "flash-tool.AppImage" }), 0);
-        compare(program.note, "Runs as a program.");
+        compare(program.note, "It runs as a program. Keep it only if you trust example.org.");
         compare(program.failed, "", "a warning is not an error");
-        compare(Downloads.parts(record({ state: "blocked" }), 0).note, "Blocked: insecure download");
+        compare(Downloads.parts(record({ state: "blocked" }), 0).note, "Not downloaded: its connection wasn't private.");
     }
 
     function test_actions() {
@@ -176,11 +177,14 @@ TestCase {
     function test_summary() {
         const list = [record({ total: 1e6, received: 1e6, state: "done" }), record({ total: 2e6, received: 0.2e6 }), record({ total: 2e6, received: 0.8e6 })];
         const v = Downloads.summary(list);
-        compare(v.title, "3 downloads · 40 %", "all their bytes");
-        compare(v.glyph, "download");
+        compare(v.title, "3 downloads");
+        compare(v.info, "40 % · 2 coming", "all their bytes");
+        compare(v.progress, 0.4);
+        compare(v.glyph, "files");
         const done = Downloads.summary([record({ state: "done", received: 8.4e6 }), record({ state: "done", received: 8.4e6 })]);
         compare(done.title, "2 downloads");
-        compare(done.glyph, "check");
+        compare(done.info, "All in Downloads");
+        compare(done.progress, -1, "no ring once all are done");
     }
 
     // a row in the Downloads group names the page it came from: "from [G] Always" for an Always site

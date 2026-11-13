@@ -2,7 +2,8 @@
 # Checks what needs the real engine, the key classes (PLAN.md 5) and the lifecycle:
 #   tools/check-engine [group ...]     (no group: all of them; the groups are in qml/EngineCheck.qml)
 # Builds build-dev first if needed (-j2, nice; BROWSER_BUILD=build for the release build). Runs offscreen on
-# a throwaway data dir; prints one line per check and exits non-zero if any failed.
+# a throwaway data dir; prints one line per check and exits non-zero if any failed. CHECK_TIMEOUT: seconds before the
+# browser is stopped (1800; tools/cloud/run.sh gives each group 300).
 set -eu
 root=$(dirname "$(dirname "$(readlink -f "$0")")")
 # build-dev keeps the QML as source (BROWSER_DEV in CMakeLists.txt), so a QML edit rebuilds in about a second
@@ -18,9 +19,9 @@ set -o pipefail
 # Chromium denies every permission prompt before the browser hears of it (PermissionRequestManager::AddRequest), so the
 # notification and location asks could not be checked (2026-10-15). The browser takes it as CHECK_X_DISPLAY.
 xlog=$(mktemp); sock=check-$$
-snd="" sndpids=""
+snd="" sndpids="" fixtures=""
 weston --backend=headless --xwayland --shell=kiosk --socket=$sock --no-config --idle-time=0 >"$xlog" 2>&1 & weston=$!
-trap 'kill $weston $sndpids 2>/dev/null || true; rm -f "$xlog"; [ -z "$snd" ] || rm -rf "$snd"' EXIT
+trap 'kill $weston $sndpids 2>/dev/null || true; rm -f "$xlog"; [ -z "$snd" ] || rm -rf "$snd"; [ -z "$fixtures" ] || rm -rf "$fixtures"' EXIT
 for i in $(seq 50); do x=$(grep -o 'xserver listening on display :[0-9]*' "$xlog" | grep -o ':[0-9]*$' || true); [ -n "$x" ] && break; sleep 0.1; done
 [ -n "$x" ] || { echo "check-engine: the private X server did not start" >&2; exit 1; }
 # The sound group's own sound server (tools/check-sound-server): a private runtime dir that becomes the browser's
@@ -31,5 +32,20 @@ if [ $# = 0 ] || printf '%s\n' "$@" | grep -qx sound; then
     sndpids=$(cat "$snd/pids")
     sound=(CHECK_RUNTIME_DIR="$snd")
 fi
-env -u PULSE_SERVER -u PIPEWIRE_REMOTE "${sound[@]}" CHECK_X_DISPLAY=$x THYRIS_OUTER_XDG_DATA_HOME=/var/empty/outer-data QT_FORCE_STDERR_LOGGING=1 timeout 1800 "$root/$dir/browser" --check-engine "$@" 2>&1 \
+# The web store groups' Google of their own (tests/native/store_test's writeFixtures): a signed extension and one changed
+# after it was signed, served in Google's place (WEBSTORE_FIXTURES, their ids in WEBSTORE_FIXTURE_IDS), and for extrun the
+# first unpacked, for the engine to load (WEBSTORE_LOAD) only when extrun is named, as every other group runs without it
+store=()
+if [ $# = 0 ] || printf '%s\n' "$@" | grep -qxE 'webstore|extrun'; then
+    if ! log=$(nice cmake --build "$root/$dir" -j2 --target store_test 2>&1); then
+        printf '%s\n' "$log" >&2
+        exit 1
+    fi
+    fixtures=$(mktemp -d)
+    WEBSTORE_FIXTURES_OUT=$fixtures "$root/$dir/store_test" writeFixtures >/dev/null && [ -s "$fixtures/ids.txt" ] \
+        || { echo "check-engine: the web store's fixtures were not made (store_test writeFixtures)" >&2; exit 1; }
+    store=(WEBSTORE_FIXTURES="$fixtures" WEBSTORE_FIXTURE_IDS="$(cat "$fixtures/ids.txt")")
+    if printf '%s\n' "$@" | grep -qx extrun; then store+=(WEBSTORE_LOAD="$fixtures/ext"); fi
+fi
+env -u PULSE_SERVER -u PIPEWIRE_REMOTE "${sound[@]}" "${store[@]}" CHECK_X_DISPLAY=$x THYRIS_OUTER_XDG_DATA_HOME=/var/empty/outer-data QT_FORCE_STDERR_LOGGING=1 timeout "${CHECK_TIMEOUT:-1800}" "$root/$dir/browser" --check-engine "$@" 2>&1 \
     | { grep -vE 'default value of option force_gl_vendor|Vulkan|GPU vendor|GPUInfo|Icon theme|no filter lists' || true; }

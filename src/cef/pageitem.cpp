@@ -45,6 +45,7 @@
 #include <QPixmap>
 #include <QPointer>
 #include <QQmlEngine>
+#include <QQuickImageProvider>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QSGSimpleTextureNode>
@@ -81,6 +82,8 @@
 #include "include/cef_keyboard_handler.h"
 #include "include/cef_parser.h"
 #include "include/cef_request_handler.h"
+#include "include/cef_scheme.h"
+#include "include/cef_urlrequest.h"
 #include "include/cef_ssl_info.h"
 #include "include/cef_resource_handler.h"
 #include "include/cef_render_handler.h"
@@ -942,13 +945,22 @@ public:
             std::fprintf(stderr, "cef trace: page %p load of %s asked at +%.1f ms\n", static_cast<void *>(this), qPrintable(url.host()),
                          (nowNs() - m_traceT0) / 1e6);
         QMutexLocker lock(&m_lock);
-        // a failed load leaves no entry, as in Qt WebEngine (Opsis draws its own failure pages): a load from Chromium's
-        // error page takes its entry (the engine's navigation patch, ~/dev/tacit-web/cef-tacit-navigation.patch)
-        const std::string address = (m_onErrorEntry && tacitEngine ? "opsis-replace:" : "") + url.toString().toStdString();
         if (m_browser && !m_firstLoad)
-            m_browser->GetMainFrame()->LoadURL(address);
+            m_browser->GetMainFrame()->LoadURL(address(url));
         else
             m_pending = url;
+    }
+    // A failed load leaves no entry, as in Qt WebEngine (Opsis draws its own failure pages): a load from Chromium's error
+    // page takes its entry (the engine's navigation patch, ~/dev/tacit-web/cef-tacit-navigation.patch), and so does one
+    // from the about:blank the page was made on, until the page has a document of its own. That had committed when the
+    // page's first load came after it, or was an https attempt that failed, and it stayed as the first entry: Back from
+    // the page's first address showed an empty page, and a page moved to another window took the entry with it (the
+    // windows check's drop, 2026-11-13). Not an address with a fragment: the patch's target leaves it out, and the page then
+    // loaded without it (the private check's #main). Under m_lock.
+    std::string address(const QUrl &url) const {
+        const bool replace = (m_onErrorEntry || m_onCreationEntry && !url.hasFragment()) && tacitEngine
+            && !url.scheme().startsWith(QLatin1String("opsis-"));
+        return (replace ? "opsis-replace:" : "") + url.toString().toStdString();
     }
     void hide(bool hidden) {
         QMutexLocker lock(&m_lock);
@@ -1026,6 +1038,27 @@ public:
         }
         if (browser)
             browser->GetHost()->CloseBrowser(true);
+    }
+    // the pages made and not closing, CEF's UI thread
+    static std::vector<PageClient *> &living() {
+        static std::vector<PageClient *> pages;
+        return pages;
+    }
+    // the profile a favicon is fetched in (Favicons): the live page's whose icon it is (a private window's own), else the
+    // main profile's
+    static CefRefPtr<CefRequestContext> iconContext(const QUrl &icon) {
+        for (PageClient *client : living()) {
+            CefRefPtr<CefBrowser> page;
+            {
+                QMutexLocker lock(&client->m_lock);
+                if (client->m_closing)
+                    continue;
+                page = client->m_browser;
+            }
+            if (page && client->m_iconAddress == icon)
+                return page->GetHost()->GetRequestContext();
+        }
+        return CefRequestContext::GetGlobalContext();
     }
     static QMutex &keptLock() {
         static QMutex lock;
@@ -1386,6 +1419,7 @@ public:
             browser->GetHost()->CloseBrowser(true);
             return;
         }
+        living().push_back(this);
         // the item may have taken the keys before the page was made (focusInEvent found no page then): the page's own
         // focus follows, or a field the page focuses as it loads fires no focus event (the password Fill row's watcher)
         toItem([browser](PageItem *item) {
@@ -1766,6 +1800,7 @@ public:
             QMutexLocker lock(&m_lock);
             m_browser = nullptr;
         }
+        std::erase(living(), this);
         {
             QMutexLocker lock(&keptLock());
             keptPages().remove(this);
@@ -2184,6 +2219,9 @@ public:
     // does not move the focus over to it: the focus goes again with the next frame (refocus), at the load's start and
     // its end (a field focused as the page loads heard nothing, the password Fill row's watcher, 2026-10-14).
     void OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, TransitionType) override {
+        // the native route: a document that kept its frame's first, empty one's window starts its scripts now (PageProcess::renew)
+        if (nativeRoute)
+            frame->SendProcessMessage(PID_RENDERER, CefProcessMessage::Create("opsis.document"));
         if (!frame->IsMain())
             return;
         m_refocus = true;
@@ -2205,6 +2243,8 @@ public:
         {
             QMutexLocker lock(&m_lock);
             m_onErrorEntry = m_errorPage;
+            if (frame->GetURL() != "about:blank")
+                m_onCreationEntry = false;
             if (m_errorPage && m_certHold == 2) {
                 m_certHold = 0;
                 continued = std::exchange(m_certContinue, QUrl());
@@ -2251,8 +2291,11 @@ public:
             }
         });
     }
+    // the page's icon as Qt WebEngine names it, image://favicon/<address>: drawn from the copy Engine keeps, which the engine
+    // fetches (Favicons, below), never by Qt itself
     void OnFaviconURLChange(CefRefPtr<CefBrowser>, const std::vector<CefString> &addresses) override {
-        const QUrl icon = addresses.empty() ? QUrl() : QUrl(QString::fromStdString(addresses.front().ToString()));
+        m_iconAddress = addresses.empty() ? QUrl() : QUrl(QString::fromStdString(addresses.front().ToString()));
+        const QUrl icon = m_iconAddress.isEmpty() ? QUrl() : QUrl(QStringLiteral("image://favicon/") + m_iconAddress.toString());
         toItem([icon](PageItem *item) {
             if (item->m_icon != icon) {
                 item->m_icon = icon;
@@ -2400,16 +2443,18 @@ private:
     void loadPending() {
         QUrl url;
         CefRefPtr<CefBrowser> page;
+        std::string to;
         {
             QMutexLocker lock(&m_lock);
             m_firstLoad = false;
             url = m_pending;
             m_pending = QUrl();
             page = m_browser;
+            to = address(url);
         }
         if (page && url.isValid()) {
             traceStep("scripts in, load asked");
-            page->GetMainFrame()->LoadURL(url.toString().toStdString());
+            page->GetMainFrame()->LoadURL(to);
         }
     }
     void setScriptsNow(const QList<ScriptSpec> &scripts) {
@@ -2521,6 +2566,7 @@ private:
     QUrl m_mainTarget;          // where the main frame's load last went (redirects too), for OnCertificateError
     bool m_errorPage = false;   // the next main-frame commit is Chromium's error page for a failure already reported
     bool m_onErrorEntry = false;    // the current entry is Chromium's error page (under m_lock): a load replaces it
+    bool m_onCreationEntry = true;  // the current entry is the about:blank the page was made on (under m_lock): the same
     // a certificate Opsis holds (OnCertificateError), under m_lock: 1 its load refused in the engine, 2 its error page
     // coming; Continue before that page is in loads it then (m_certContinue); certificates Continue let through, by host:port
     int m_certHold = 0;
@@ -2535,6 +2581,7 @@ private:
     // the native route's scripts and their version, under m_lock
     QList<ScriptSpec> m_scripts;
     int m_scriptsGeneration = 0;
+    QUrl m_iconAddress;                                         // the page's favicon as the page gives it, CEF's UI thread
 
     CefRefPtr<CefUnresponsiveProcessCallback> m_hung;   // the stuck process's callback, under m_lock
     bool m_reloadOnEnd = false;                         // the next end of the page's process is Reload's, under m_lock
@@ -3425,12 +3472,90 @@ void PageItem::closeKept() {
         client->closeKept();
 }
 
+// Favicons (image://favicon/<address>), as Qt WebEngine's provider gives them to Engine::keepIcon, which keeps each as a
+// file that every favicon is drawn from: the engine fetches the icon (a request of its own in the profile of the page that
+// shows it, else the main profile's, without cookies, as Chromium fetches favicons; a data: icon is read as it is), and it
+// comes back once. Qt drew the page's own address before, fetching it outside the engine (its own connection and cookies,
+// none of a private window's), and a closed page's icon came from nowhere.
+class FaviconResponse : public QQuickImageResponse {
+public:
+    QQuickTextureFactory *textureFactory() const override { return QQuickTextureFactory::textureFactoryForImage(m_image); }
+    // GUI thread: the icon's bytes (none for no icon), at most `size`
+    void take(const QByteArray &bytes, QSize size) {
+        m_image = QImage::fromData(bytes);
+        if (!m_image.isNull() && size.isValid() && (m_image.width() > size.width() || m_image.height() > size.height()))
+            m_image = m_image.scaled(size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        emit finished();
+    }
+private:
+    QImage m_image;
+};
+
+class FaviconFetch : public CefURLRequestClient {
+public:
+    FaviconFetch(QPointer<FaviconResponse> response, QSize size) : m_response(std::move(response)), m_size(size) {}
+    void OnRequestComplete(CefRefPtr<CefURLRequest> request) override {
+        const bool ok = request->GetRequestStatus() == UR_SUCCESS && request->GetResponse() && request->GetResponse()->GetStatus() == 200;
+        answer(m_response, ok ? m_bytes : QByteArray(), m_size);
+    }
+    void OnUploadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+    void OnDownloadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+    void OnDownloadData(CefRefPtr<CefURLRequest>, const void *data, size_t length) override {
+        if (m_bytes.size() < (1 << 20))     // an icon, not a page
+            m_bytes.append(static_cast<const char *>(data), qsizetype(length));
+    }
+    bool GetAuthCredentials(bool, const CefString &, int, const CefString &, const CefString &, CefRefPtr<CefAuthCallback>) override {
+        return false;
+    }
+    static void answer(QPointer<FaviconResponse> response, const QByteArray &bytes, QSize size) {
+        QMetaObject::invokeMethod(qApp, [response, bytes, size] {
+            if (response)
+                response->take(bytes, size);
+        });
+    }
+private:
+    QPointer<FaviconResponse> m_response;
+    QSize m_size;
+    QByteArray m_bytes;
+    IMPLEMENT_REFCOUNTING(FaviconFetch);
+};
+
+class Favicons : public QQuickAsyncImageProvider {
+public:
+    QQuickImageResponse *requestImageResponse(const QString &id, const QSize &size) override {
+        auto *response = new FaviconResponse;
+        const QPointer<FaviconResponse> answer(response);
+        const QUrl address(id);
+        if (address.scheme() == QLatin1String("data")) {
+            const QByteArray data = address.toEncoded();
+            const qsizetype comma = data.indexOf(',');
+            const QByteArray head = data.left(comma), body = QByteArray::fromPercentEncoding(data.mid(comma + 1));
+            FaviconFetch::answer(answer, comma < 0 ? QByteArray() : head.endsWith(";base64") ? QByteArray::fromBase64(body) : body, size);
+            return response;
+        }
+        CefPostTask(TID_UI, base::BindOnce([](QPointer<FaviconResponse> answer, QUrl address, QSize size) {
+            CefRefPtr<CefRequest> request = CefRequest::Create();
+            request->SetURL(address.toString(QUrl::FullyEncoded).toStdString());
+            request->SetMethod("GET");
+            CefURLRequest::Create(request, new FaviconFetch(answer, size), PageClient::iconContext(address));
+        }, answer, address, size));
+        return response;
+    }
+};
+
+void PageItem::serveOwnPages(QObject *profile, CefRefPtr<CefSchemeHandlerFactory> pages) {
+    if (CefRefPtr<CefRequestContext> context = contextOf(profile))
+        context->RegisterSchemeHandlerFactory("browser", "", pages);
+}
+
 void PageItem::registerQml(QQmlEngine *engine) {
     static const int registered = qmlRegisterType<PageItem>("Browser.Cef", 1, 0, "PageItem")
         + qmlRegisterType<ScriptCollection>("Browser.Cef", 1, 0, "ScriptCollection")
         + qmlRegisterSingletonInstance("Browser.Cef", 1, 0, "CefProfiles", CefProfiles::get());
     Q_UNUSED(registered)
     engine->addImportPath(QStringLiteral("qrc:/cefshim"));
+    if (!engine->imageProvider(QStringLiteral("favicon")))
+        engine->addImageProvider(QStringLiteral("favicon"), new Favicons);
 }
 
 void PageItem::setZoomFactor(qreal factor) {
@@ -3674,6 +3799,11 @@ void PageItem::setUrl(const QUrl &url) {
         m_url = url;
         emit urlChanged();
     }
+    // its scripts first (BrowserView's applyCosmetics: the site's ad-block scriptlets): Chromium makes the page process a
+    // document of another site comes in as the navigation is made, before OnBeforeBrowse, and that process takes the
+    // page's scripts as it is made (the engine keeps the latest it was sent). Set only in OnBeforeBrowse, they came too
+    // late for it, and the first load of a new site ran none of its scriptlets. A link in the page has no such moment.
+    emit loadAsked(url);
     if (m_client)
         m_client->load(url);
     else

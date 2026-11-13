@@ -46,8 +46,8 @@ TestCase {
 
     function test_sectionsInTheFramesOrderWithNoneForWhatIsNotBuilt() {
         compare(heads(Settings.rows(state(), "", "")), ["Search", "Start and windows", "Downloads", "Ad blocking", "Pages", "Passwords",
-                                                         "Privacy", "Extensions", "Keys", "Import", "About"],
-                "Import between Keys and About; no Memory, as the memory net has no setting");
+                                                         "Privacy", "Sites", "Extensions", "Import", "Keys", "About"],
+                "Sites after Privacy, Import before the key list; no Memory, as the memory net has no setting");
         compare(Settings.order.indexOf("passwords"), Settings.order.indexOf("pages") + 1, "Passwords after Pages");
         compare(heads(Settings.rows(state({ zen: null }), "", "")).indexOf("Import"), -1, "with nothing of Zen's to show, no Import");
     }
@@ -134,7 +134,7 @@ TestCase {
         compare(row(rows, "failure"), null, "no failure row while none failed");
         compare(row(rows, "allowed").value, "1");
         compare(row(rows, "zoom").value, "100 %");
-        compare(row(rows, "fonts").value, "Noto Serif · 16 px");
+        compare(row(rows, "fonts").value, "Noto Serif, 16 px", "no middots in values");
         compare(row(rows, "minimumFont").value, "Off");
         compare(row(rows, "languages").value, "en-GB");
         compare([row(rows, "freeze"), row(rows, "unload"), row(rows, "keep")], [null, null, null], "no timed freeze or unload, no Keep loaded sites");
@@ -145,7 +145,8 @@ TestCase {
         compare(row(Settings.rows(state({ updating: true }), "", ""), "update").action, "", "no second update while one runs");
         const done = row(Settings.rows(state({ listUpdated: now - 60000, lists: [{ file: "easylist", modified: now - 60000 }] }), "", ""), "update");
         compare([done.label, done.value, done.action], ["Up to date", "today 17:59", ""], "an update just done says so, with no Update now");
-        compare(Settings.now("adblock", state({ listUpdated: now - 60000 })), "Up to date");
+        compare(Settings.lead(Settings.foldOf("adblock"), state({ listUpdated: now - 60000, passwords: { state: "none" } }), false),
+                [["Ads and trackers are blocked, lists ", false], ["up to date", true], [".", false]], "and the sheet's sentence");
         compare(row(Settings.rows(state({ listUpdated: now - 2 * 3600000 }), "", ""), "update").action, "Update now", "an hour on, it is offered again");
     }
 
@@ -218,20 +219,27 @@ TestCase {
         compare(clearing[1].action, "Undo");
     }
 
+    // the side list is the rail's settings face: each of the six sections with a glyph, a line and a count where it holds
+    // some; a section's sheet opens with what it is set to, the cause in the accent
     function test_theSideListSaysWhatEachSectionIsSetTo() {
         const s = state({ passwords: { state: "ready", entries: [{ id: "1" }, { id: "2" }], removing: {}, revealed: {} }, extensions: [], versions: { opsis: "0.1", chromium: "140.0.7339.225" } });
-        compare(Settings.now("search", s), "DuckDuckGo");
-        compare(Settings.now("start", s), "Default browser");
-        compare(Settings.now("downloads", s), "~/Downloads");
-        compare(Settings.now("pages", s), "100 % · Noto Serif");
-        compare(Settings.now("passwords", s), "2 saved");
-        compare(Settings.now("extensions", s), "None");
-        compare(Settings.now("about", s), "Version 0.1");
+        const lead = (section, st) => Settings.lead(Settings.foldOf(section), st, false);
+        const words = (section, st) => lead(section, st).map(p => p[0]).join("");
+        compare(lead("search", s)[1], ["DuckDuckGo", true]);
+        compare(words("search", s), "Thyris searches with DuckDuckGo and reopens your tasks when it starts.");
+        compare(words("pages", s), "Pages open at 100 % in Noto Serif.");
+        compare(Settings.lead(Settings.foldOf("pages"), s, true).map(p => p[0]).join(""), "Pages open at 100 % in Noto Serif. The page behind shows each change.");
+        verify(words("passwords", s).endsWith(" 2 passwords are saved in your keyring."), words("passwords", s));
+        compare(words("extensions", s), "No extensions installed. Import brings another browser's bookmarks, passwords and sign-ins.");
+        compare(Settings.foldCount(Settings.foldOf("extensions"), s), "", "no count with none");
+        compare(Settings.foldCount(Settings.foldOf("extensions"), state({ extensions: [{ id: "a" }] })), "1");
+        compare(Settings.foldCount(Settings.foldOf("sites"), state({ siteChoices: [{}, {}] })), "2");
         const about = Settings.rows(s, "", "").filter(r => r.section === "about" && r.kind !== "head");
         compare(about.map(r => r.label + "|" + r.value + "|" + r.detail), ["Thyris|Version 0.1|Built on Chromium 140"], "About: the name, the version, the engine");
-        compare(Settings.now("adblock", state({ updating: true })), "Updating…");
-        compare(Settings.order.every(n => Settings.glyphs[n] && Settings.notes[n]), true, "every section has a glyph and a line");
-        compare(Settings.clusters.reduce((all, c) => all.concat(c), []).sort(), Settings.order.slice().sort(), "every section in one run of the side list");
+        compare(lead("adblock", state({ updating: true, passwords: { state: "none" } })),
+                [["Ads and trackers are blocked; the lists are ", false], ["updating", true], [".", false]]);
+        compare(Settings.folds.every(f => f.glyph && f.note), true, "every section has a glyph and a line");
+        compare(Settings.folds.reduce((all, f) => all.concat(f.members), []).sort(), Settings.order.slice().sort(), "every section in one run of the side list");
     }
 
     function test_spellCheckSaysWhichLanguageHasNoDictionary() {

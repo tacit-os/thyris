@@ -132,8 +132,6 @@ private:
     IMPLEMENT_REFCOUNTING(OwnPagesCef);
 };
 }
-// a page's profile as CEF's request context, null for the main profile's global one (src/cef/pageitem.cpp)
-CefRefPtr<CefRequestContext> contextOf(QObject *profile);
 
 Engine::Engine(QObject *parent) : QObject(parent) {}
 #else
@@ -225,13 +223,11 @@ void Engine::prepare() {
 
 void Engine::attach(QObject *profile) {
 #ifdef BROWSER_CEF
-    // browser:// pages: on the global context once for the engine, and on each private window's context, which is its
-    // own and has none of the global one's factories (CefRegisterSchemeHandlerFactory is the global context's)
-    static const CefRefPtr<CefSchemeHandlerFactory> own = new OwnPagesCef();
-    static const bool global = CefRegisterSchemeHandlerFactory("browser", "", own);
-    Q_UNUSED(global)
-    if (CefRefPtr<CefRequestContext> context = contextOf(profile))
-        context->RegisterSchemeHandlerFactory("browser", "", own);
+    // browser:// pages: the engine's for the main profile, and a private window's own request context's, which has none
+    // of the engine's (Settings and Pages and memory opened there as "Can't reach settings", 2026-11-13)
+    static const bool own = CefRegisterSchemeHandlerFactory("browser", "", new OwnPagesCef());
+    Q_UNUSED(own)
+    PageItem::serveOwnPages(profile, new OwnPagesCef());
 #else
     auto *p = qobject_cast<QQuickWebEngineProfile *>(profile);
     if (p && !p->urlSchemeHandler("browser"))

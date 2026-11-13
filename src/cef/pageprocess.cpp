@@ -118,6 +118,27 @@ bool plain(CefRefPtr<CefV8Value> v, std::vector<CefRefPtr<CefV8Value>> &path, in
     return true;
 }
 
+// The page's own scripts of a new document, once it has its element (WhenElement below): its main world is made before
+// the parser makes <html>, and a script that reached for document.documentElement then threw (the ad-block scriptlets
+// marking the page, 2026-11-13). Qt WebEngine runs them as the element is made (DidCreateDocumentElement); here a
+// MutationObserver's callback runs them, which comes before the page's first script runs.
+class WhenElement : public CefV8Handler {
+public:
+    WhenElement(CefRefPtr<CefFrame> frame, std::vector<std::string> sources) : m_frame(frame), m_sources(std::move(sources)) {}
+    bool Execute(const CefString &, CefRefPtr<CefV8Value>, const CefV8ValueList &, CefRefPtr<CefV8Value> &, CefString &) override {
+        std::vector<std::string> sources;
+        sources.swap(m_sources);
+        for (const std::string &source : sources)
+            m_frame->ExecuteJavaScript(source, "", 0);
+        return true;
+    }
+    IMPLEMENT_REFCOUNTING(WhenElement);
+
+private:
+    CefRefPtr<CefFrame> m_frame;
+    std::vector<std::string> m_sources;
+};
+
 // The native route (~/book4-edge/opsis-beat-chrome-plan.md, stage 1): Opsis's scripts go into every new document from
 // here, as each document's main world is made, and Opsis's own world is made beside it; runJavaScript evaluates here.
 // No DevTools session: its Page domain cost ~0.6 on Speedometer (2026-10-08). The scripts come with the page
@@ -158,14 +179,34 @@ public:
             return;
         }
         // a new document: Opsis's print(), then its scripts, in their order; Opsis's world is made with the first of its own
-        context->GetGlobal()->SetValue("print", CefV8Value::CreateFunction("print", new Print()), V8_PROPERTY_ATTRIBUTE_NONE);
         m_mains.insert(id);
         m_worlds.erase(id);
+        start(browser, frame, context);
+    }
+    // A document's start in its main world `context`, entered: Opsis's print(), then the page's scripts
+    void start(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) {
+        const std::string id = frame->GetIdentifier().ToString();
+        context->GetGlobal()->SetValue("print", CefV8Value::CreateFunction("print", new Print()), V8_PROPERTY_ATTRIBUTE_NONE);
         std::set<std::string> &ran = m_ran[id];
         ran.clear();
+        CefRefPtr<CefV8Value> document = context->GetGlobal()->GetValue("document");
+        m_documents[id] = document;
+        CefRefPtr<CefV8Value> element = document && document->IsObject() ? document->GetValue("documentElement") : nullptr;
+        const bool hasElement = element && element->IsObject();
+        std::vector<std::string> waiting;
         for (const Script &s : m_pages[browser->GetIdentifier()].scripts) {
             ran.insert(s.key);
-            run(frame, s);
+            if (!s.opsis && !hasElement)
+                waiting.push_back(s.source);
+            else
+                run(frame, s);
+        }
+        if (!waiting.empty()) {
+            context->GetGlobal()->SetValue("__opsisWhenElement", CefV8Value::CreateFunction("__opsisWhenElement", new WhenElement(frame, std::move(waiting))),
+                                           V8_PROPERTY_ATTRIBUTE_NONE);
+            frame->ExecuteJavaScript("(() => { const run = window.__opsisWhenElement; delete window.__opsisWhenElement;"
+                                     " new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); run() } })"
+                                     ".observe(document, { childList: true }) })()", "", 0);
         }
     }
     void OnContextReleased(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) override {
@@ -180,6 +221,22 @@ public:
         m_mains.erase(id);
         m_making.erase(id);
         m_ran.erase(id);
+        m_documents.erase(id);
+    }
+    // A document that took over its frame's first, empty one (a page's window.open of an address on its own site, a frame
+    // of its own site) keeps that one's window, and Chromium makes no main world for it: its scripts ran in the empty one
+    // only, and none of Opsis's (the login watcher, the scriptlets) were in the page. The browser says when a frame
+    // commits ("opsis.document"): a document other than the one its main world started with starts now.
+    void renew(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame) {
+        const std::string id = frame->GetIdentifier().ToString();
+        CefRefPtr<CefV8Context> context = m_mains.count(id) ? frame->GetV8Context() : nullptr;
+        if (!context || !context->IsValid() || !context->Enter())
+            return;
+        CefRefPtr<CefV8Value> document = context->GetGlobal()->GetValue("document");
+        const auto known = m_documents.find(id);
+        if (document && (known == m_documents.end() || !known->second->IsSame(document)))
+            start(browser, frame, context);
+        context->Exit();
     }
 
     bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, CefProcessId,
@@ -190,6 +247,10 @@ public:
             return false;
         if (name == "opsis.scripts") {
             update(browser, frame, arguments->GetDictionary(0));
+            return true;
+        }
+        if (name == "opsis.document") {
+            renew(browser, frame);
             return true;
         }
         if (name == "opsis.eval") {
@@ -294,6 +355,7 @@ private:
     std::set<std::string> m_making;                                 // Opsis's world asked for, not made yet
     std::map<std::string, CefRefPtr<CefV8Context>> m_worlds;        // Opsis's world
     std::map<std::string, std::set<std::string>> m_ran;             // the keys of the scripts it has run
+    std::map<std::string, CefRefPtr<CefV8Value>> m_documents;       // the document its scripts started in
 
     IMPLEMENT_REFCOUNTING(PageProcess);
 };

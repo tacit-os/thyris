@@ -1,6 +1,6 @@
 #!/bin/bash
-# tools/check-sound-server <dir>: the sound group's own sound server in <dir>, for tools/check-engine and the cloud's CEF
-# run (tools/cloud/run.sh), which starts the browser itself. PipeWire, WirePlumber with no device monitors, and
+# tools/check-sound-server <dir>: the sound group's own sound server in <dir>, for tools/check-engine (on the cloud machine
+# too: tools/cloud/run.sh runs each group through it). PipeWire, WirePlumber with no device monitors, and
 # pipewire-pulse, in a private runtime dir that becomes the browser's (CHECK_RUNTIME_DIR=<dir>), with one speaker, a null
 # sink called check_speaker. A page's sound goes where it would on a desktop, $XDG_RUNTIME_DIR/pulse/native, is recorded
 # there, and never reaches a real device. The daemons get that dir as their home and only the stock configs, so none of

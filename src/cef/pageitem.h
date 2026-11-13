@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include "include/cef_base.h"
+class CefSchemeHandlerFactory;
 #include "requests.h"
 #include "scripts.h"
 
@@ -100,6 +101,8 @@ public:
     static void registerQml(QQmlEngine *engine);
     // pages kept open after their item went, for downloads still coming (PageClient::close): closed now (CefRuntime::stop)
     static void closeKept();
+    // `pages` answers browser:// in `profile`'s request context too, when that is a private window's own (Engine::attach)
+    static void serveOwnPages(QObject *profile, CefRefPtr<CefSchemeHandlerFactory> pages);
     // the page's history with its entries' state, for another view (Windows::history), and that restored here before
     // this view has loaded anything (Windows::restore); both need Opsis's CEF build
     QString historyData();
@@ -202,6 +205,7 @@ signals:
     void pdfPrintingFinished(const QString &filePath, bool success);
     // the page called print() (window.print, any frame's), as Qt WebEngine's
     void printRequested();
+    void loadAsked(const QUrl &url);      // setUrl, before the load: the scripts for it go in first (BrowserView)
     void urlChanged();
     void titleChanged();
     void loadingChanged(const QVariantMap &info);

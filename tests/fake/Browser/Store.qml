@@ -9,4 +9,6 @@ QtObject {
 
     function load(name) { return name in files ? JSON.parse(files[name]) : undefined }
     function save(name, value) { files[name] = JSON.stringify(value); return true }
+    // the real one writes on a worker thread what the value was at the call; here it is written at once
+    function saveLater(name, value) { save(name, value) }
 }

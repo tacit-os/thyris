@@ -295,10 +295,11 @@ TestCase {
         const rows = RailRows.build(s, {});
         compare(types(rows), ["thread", "page", "download", "page"]);
         compare(rows[2].status, "summary");
-        compare(rows[2].title, "3 downloads · 40 %");
+        compare(rows[2].title, "3 downloads");
+        compare(rows[2].info, "40 % · 2 coming", "of all their bytes");
         compare(rows[2].key, "s:" + p);
         const listed = RailRows.build(s, { listed: [p] });
-        compare(listed.map(r => r.title).slice(2, 6), ["3 downloads · 40 %", "one", "two", "three"]);
+        compare(listed.map(r => r.title).slice(2, 6), ["3 downloads", "one", "two", "three"]);
         compare(listed[2].open, true);
     }
     function test_failuresAndWarningsKeepRowsOfTheirOwn() {
@@ -577,26 +578,30 @@ TestCase {
         compare(RailRows.privateTitle(null), "Private");
     }
 
-    // the tabs along the top: faces, then every page of every open task, a hairline where a task of several pages begins
+    // the tabs along the top: faces, then every open task, a task of several pages led by its name and then its pages,
+    // none while it is folded by hand; a hairline where a task beside one of several pages begins
     function test_stripListsFacesThenEveryPageOfEveryTask() {
         const s = make([["a", 1], ["b", 3], ["c", 1], ["d", 1]]);
         s.addAlways("https://example.org/pin", "Pin", "");
         const rows = RailRows.strip(s, {});
-        compare(rows.map(r => r.type), ["pin", "page", "page", "page", "page", "page", "page"]);
+        compare(rows.map(r => r.type), ["pin", "page", "thread", "page", "page", "page", "page", "page"]);
+        compare([rows[2].ref, rows[2].count, rows[2].open], [s.threads[1].id, 3, true], "the task of three by its name");
         compare(rows.filter(r => r.type === "page").map(r => r.thread), [0, 1, 1, 1, 2, 3].map(i => s.threads[i].id))
-        compare(rows.filter(r => r.type === "page").map(r => r.edge), [false, true, false, false, true, false], "a hairline before and after the task of three, none between tasks of one");
+        compare(rows.slice(1).map(r => r.edge), [false, true, false, false, false, true, false], "a hairline before and after the task of three, none between tasks of one");
         s.setOpen(s.threads[1].id, false);
-        compare(RailRows.strip(s, {}).filter(r => r.type === "page").length, 6, "a task folded in the rail still lists its pages");
+        const folded = RailRows.strip(s, {});
+        compare(folded.map(r => r.type), ["pin", "page", "thread", "page", "page"], "a task folded by hand: its name, none of its pages");
+        compare([folded[2].count, folded[2].open], [3, false], "with how many pages it holds");
         compare(RailRows.strip(s, { offTheRecord: true }).filter(r => r.type === "pin").length, 0, "a private window has no faces");
     }
     function test_stripSyncsIntoTheRailsModel() {
         const s = make([["a", 2], ["b", 1]]);
         const m = createTemporaryObject(modelComponent, this);
         RailRows.sync(m, RailRows.strip(s, {}));
-        compare(m.count, 3);
+        compare(m.count, 4, "the task of two's name, its two pages, the task of one");
         s.update(s.threads[0].pages[0], { title: "Renamed" });
         RailRows.sync(m, RailRows.strip(s, {}));
-        compare(m.get(0).title, "Renamed");
-        compare(m.get(2).edge, true);
+        compare(m.get(1).title, "Renamed");
+        compare(m.get(3).edge, true);
     }
 }

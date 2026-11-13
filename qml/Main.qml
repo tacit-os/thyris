@@ -381,13 +381,15 @@ Window {
                 downloadModel.requested(download, "", "", true);
                 return;
             }
-            // a page that was made for a file and showed nothing: the file is the opener's, and the empty page goes
+            // a page that was made for a file and showed nothing: the file is the opener's, and the empty page goes. One held
+            // back as insecure stays that page's until Keep, and goes with it if it closes instead (it was the opener's, so
+            // the empty page stayed and the held file did not go with it)
             const empty = !!v && v.downloadOnly && !v.parked;
             const from = !v || v.typedLoad ? "" : empty ? String(v.openedBy.url) : String(v.url) || (v.openedBy ? String(v.openedBy.url) : "");
+            const held = empty && Downloads.insecure(String(download.url), from);
             // a sign-in's window has a holder but no opener: reading its opener threw, and the download was cancelled
-            const id = downloadModel.requested(download, !v ? "" : v.holder ? v.holder.opener?.pageId ?? "" : empty ? v.openedBy.pageId ?? "" : v.pageId ?? "", from, false);
-            // not one held back as insecure: that waits for Keep
-            if (empty && id !== "" && sessionModel.downloadById(id)?.state !== "blocked") {
+            const id = downloadModel.requested(download, !v ? "" : v.holder ? v.holder.opener?.pageId ?? "" : empty && !held ? v.openedBy.pageId ?? "" : v.pageId ?? "", from, false);
+            if (empty && !held && id !== "") {
                 // the profile's one handler is the first window's: the page may be another window's
                 const page = v.pageId;
                 Qt.callLater(() => { const w = ownerOf(page) ?? root; if (w.views[page] === v) w.dropEmptyPage(page) });

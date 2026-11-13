@@ -110,6 +110,13 @@ WebEngineView {
         applyCosmetics(request.url)
     }
     onNewWindowRequested: request => view.openRequested(request)
+    // CEF (PageItem.loadAsked): a load Thyris asks for takes its site's scripts before the engine starts it, as the page
+    // process a new site comes in takes them as it is made; Qt WebEngine has no such signal, nor needs it
+    Connections {
+        target: view
+        ignoreUnknownSignals: true
+        function onLoadAsked(url) { view.applyCosmetics(url) }
+    }
     // A main-frame navigation refused above: its LoadStarted (it still comes, before ERR_ABORTED) replaces
     // no document.
     property string rejected: ""

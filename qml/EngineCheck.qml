@@ -185,12 +185,15 @@ QtObject {
         { name: "(memory to spare again; back on the idle page; the net is back to 10 s)", wait: 2500, act: () => { Facts.fakeAvailable(-1); app.show(check.idlePage) },
           expect: () => app.memoryNetTimer.interval === 10000 && state(idlePage) === 0 && !session.pages[idlePage].needsYou },
         { group: "peek" },
-        // The hover peek (PLAN.md 3.5): folded, the page starts 6 px in from the window's left side (PLAN.md 3.19).
+        // The hover peek (PLAN.md 3.5): folded, the page starts 6 px in from the window's left side (PLAN.md 3.19). The flicks
+        // and leaves start at 28 px, just outside the 24 px hover zone, so only the flick can open it.
         { name: "folded, with the pointer on the page: no peek", wait: 800,
           act: () => { app.railPinned = false; probe.pointer(700, 400) }, expect: () => !app.railPinned && !hoverPeek.open },
         { name: "12 px in: the peek is out within 100 ms", wait: 100,
           act: () => probe.pointer(12, 400), expect: () => hoverPeek.open },
         { name: "back on the page it leaves", wait: 600, act: () => probe.pointer(700, 400), expect: () => !hoverPeek.open },
+        // it leaves 450 ms after the pointer, then slides 400 ms: until it is in, the zone is still the overlay's
+        { name: "(the overlay slid back in)", wait: 400, expect: () => !hoverPeek.open && peekedRail.slide === 0 },
         { name: "the page under the hover zone still sees the pointer and the click", wait: 300,
           focus: "window.downs = []; window.moves = 0; addEventListener('mousedown', e => downs.push(e.clientX));"
               + " addEventListener('mousemove', e => { if (e.clientX < 10) moves++ })",
@@ -198,25 +201,25 @@ QtObject {
           expect: () => true, page: "JSON.stringify([downs, moves])", pageExpect: v => { const r = JSON.parse(v); return r[0].join() === "5" && r[1] > 0 } },
         { name: "and it leaves again", wait: 600, act: () => probe.pointer(700, 400), expect: () => !hoverPeek.open },
         { name: "a flick out across the left side opens it at once", wait: 0,
-          act: () => { probe.pointer(60, 400); probe.pointer(20, 400); probe.leave() }, expect: () => hoverPeek.open },
+          act: () => { probe.pointer(60, 400); probe.pointer(28, 400); probe.leave() }, expect: () => hoverPeek.open },
         { name: "it stays while the pointer is away", wait: 1000, expect: () => hoverPeek.open },
         { name: "it leaves when the pointer has not come back after 1.5 s", wait: 1100, expect: () => !hoverPeek.open },
         { name: "flicked out, a resize from the left border sends it back",
-          act: () => { probe.pointer(60, 400); probe.pointer(20, 400); probe.leave(); app.width = 1200 }, wait: 300,
+          act: () => { probe.pointer(60, 400); probe.pointer(28, 400); probe.leave(); app.width = 1200 }, wait: 300,
           expect: () => app.width === 1200 && !hoverPeek.open },
         { name: "the window back at its width", wait: 300, act: () => app.width = 1280, expect: () => app.width === 1280 && !hoverPeek.open },
         { name: "flicked out again", wait: 300,
-          act: () => { probe.pointer(60, 400); probe.pointer(20, 400); probe.leave() }, expect: () => hoverPeek.open },
+          act: () => { probe.pointer(60, 400); probe.pointer(28, 400); probe.leave() }, expect: () => hoverPeek.open },
         { name: "back onto the rail it stays", wait: 400, act: () => probe.pointer(150, 400), expect: () => hoverPeek.open },
         { name: "off the rail it leaves", wait: 600, act: () => probe.pointer(700, 400), expect: () => !hoverPeek.open },
         { name: "leaving by moving right opens nothing", wait: 400,
-          act: () => { probe.pointer(18, 400); probe.pointer(22, 400); probe.leave() }, expect: () => !hoverPeek.open },
+          act: () => { probe.pointer(26, 400); probe.pointer(30, 400); probe.leave() }, expect: () => !hoverPeek.open },
         { name: "leaving across the top near the left side opens nothing", wait: 400,
-          act: () => { probe.pointer(60, 400); probe.pointer(20, 400); probe.pointer(20, 3); probe.leave() }, expect: () => !hoverPeek.open },
+          act: () => { probe.pointer(60, 400); probe.pointer(28, 400); probe.pointer(28, 3); probe.leave() }, expect: () => !hoverPeek.open },
         { name: "leaving across the right side opens nothing", wait: 400,
           act: () => { probe.pointer(1270, 400); probe.leave() }, expect: () => !hoverPeek.open },
         { name: "a press near the left side dragged out across the right side opens nothing", wait: 400,
-          act: () => { probe.pointer(60, 400); probe.pointer(20, 400); probe.pointer(20, 400, Qt.LeftButton); probe.pointer(1270, 400, Qt.LeftButton); probe.pointer(1270, 400); probe.leave() },
+          act: () => { probe.pointer(60, 400); probe.pointer(28, 400); probe.pointer(28, 400, Qt.LeftButton); probe.pointer(1270, 400, Qt.LeftButton); probe.pointer(1270, 400); probe.leave() },
           expect: () => !hoverPeek.open },
         { name: "a drag from the page into the zone opens nothing while the button is held", wait: 400,
           act: () => { probe.pointer(700, 400); probe.pointer(700, 400, Qt.LeftButton); probe.pointer(300, 400, Qt.LeftButton); probe.pointer(10, 400, Qt.LeftButton) },
@@ -226,15 +229,15 @@ QtObject {
         // Under Hyprland the peek asks where the cursor went; offscreen Backdrop answers fakeCursor, on the
         // screen, where the window lies at (6, 44), 800 high.
         { name: "a flick that reaches the screen's edge level with the window opens it at once", wait: 0,
-          act: () => { Backdrop.fakeCursor = Qt.point(0, 444); probe.pointer(60, 400); probe.pointer(20, 400); probe.leave() },
+          act: () => { Backdrop.fakeCursor = Qt.point(0, 444); probe.pointer(60, 400); probe.pointer(28, 400); probe.leave() },
           expect: () => hoverPeek.open },
         { name: "back on the page it leaves", wait: 600, act: () => probe.pointer(700, 400), expect: () => !hoverPeek.open },
         { name: "a reach for the left resize border, the cursor still in the gap (or a neighbour), opens nothing", wait: 400,
-          act: () => { Backdrop.fakeCursor = Qt.point(3, 444); probe.pointer(60, 400); probe.pointer(20, 400); probe.leave() },
+          act: () => { Backdrop.fakeCursor = Qt.point(3, 444); probe.pointer(60, 400); probe.pointer(28, 400); probe.leave() },
           expect: () => !hoverPeek.open },
         // Hyprland answers before the next motion event: the first answer is the point that left the window
         { name: "a flick first answered in the gap opens once a later answer reaches the edge", wait: 300,
-          act: () => { Backdrop.fakeCursor = Qt.point(3, 444); probe.pointer(60, 400); probe.pointer(20, 400); probe.leave(); Backdrop.fakeCursor = Qt.point(0, 444) },
+          act: () => { Backdrop.fakeCursor = Qt.point(3, 444); probe.pointer(60, 400); probe.pointer(28, 400); probe.leave(); Backdrop.fakeCursor = Qt.point(0, 444) },
           expect: () => hoverPeek.open },
         { name: "and back on the page it leaves", wait: 600, act: () => probe.pointer(700, 400), expect: () => !hoverPeek.open },
         { name: "a fast flick last seen 400 px in opens it at once", wait: 0,
@@ -247,7 +250,7 @@ QtObject {
           act: () => { probe.pointer(700, 400); probe.pointer(60, 400); probe.pointer(10, 400) }, expect: () => hoverPeek.open },
         { name: "and off it on the page it leaves", wait: 600, act: () => probe.pointer(700, 400), expect: () => !hoverPeek.open },
         { name: "the screen's edge above the window opens nothing", wait: 400,
-          act: () => { Backdrop.fakeCursor = Qt.point(0, 20); probe.pointer(60, 400); probe.pointer(20, 400); probe.leave() },
+          act: () => { Backdrop.fakeCursor = Qt.point(0, 20); probe.pointer(60, 400); probe.pointer(28, 400); probe.leave() },
           expect: () => !hoverPeek.open },
         { name: "Ctrl+B pins again", focus: "document.activeElement.blur()", wait: 1200,
           key: Qt.Key_B, mods: ctrl, expect: () => app.railPinned && !hoverPeek.open && !app.railMoving },
@@ -569,7 +572,8 @@ QtObject {
         { name: "Cancel (Tab, Enter): nothing opened, by the browser or by Qt", wait: 400,
           act: () => { probe.press(Qt.Key_Tab, 0); probe.press(Qt.Key_Return, 0) },
           expect: () => !view.ask && Apps.lastOpened === "" && probe.qtLaunches().length === 0 && view.activeFocus },
-        { name: "a link to a scheme with a default app asks to open it in that app", wait: 1000,
+        // as the link above, it reaches Thyris and is looked up before it asks (0.9 s and 0.1 s on the cloud machine)
+        { name: "a link to a scheme with a default app asks to open it in that app", wait: 4000,
           focus: "act = () => location.href = 'browsercheckapp:hello'", act: () => { probe.fakeApp("browsercheckapp", "Check App"); check.click() },
           expect: () => view.ask && check.askText() === "Wants to open a browsercheckapp: link in Check App"
               && check.section().model.lines[1].text === "(default app for browsercheckapp:)" },
@@ -958,9 +962,10 @@ QtObject {
           expect: () => view.failure && view.failure.kind === "offline" && ownPage.visible && ownPage.page.title === "Can't reach down.test:" + check.closed
               && ownPage.page.body.join("|") === "This computer has no network connection.|The page loads again by itself when the network is back."
               && !view.loading && card() === 40 && session.current.failed === "error" && rail.addressField.url === "http://down.test:" + check.closed + "/" },
-        { name: "the network back: the page loads again by itself, once (refused now, a plain Can't reach)", wait: 2500,
+        { name: "the network back: the page loads again by itself, once (refused now: Can't reach, the site refused the connection)", wait: 2500,
           act: () => { check.starts = []; Facts.fakeReachability("online") },
-          expect: () => check.starts.length === 1 && view.failure && view.failure.kind === "connection" && ownPage.page.body.length === 0 },
+          expect: () => check.starts.length === 1 && view.failure && view.failure.kind === "connection"
+              && ownPage.page.body.join("|") === "The site refused the connection." },
         { name: "the network gone and back again: a page that is not offline does not reload", wait: 1500,
           act: () => { check.starts = []; Facts.fakeReachability("none"); Facts.fakeReachability("online") }, expect: () => check.starts.length === 0 },
         { name: "(the failure page has the page's keys)", wait: 300, act: () => app.focusPage(), expect: () => ownPage.activeFocus },
@@ -1037,10 +1042,10 @@ QtObject {
         { name: "(back on the opener: one process for both)", wait: 800,
           act: () => { check.sibling = session.currentPage; app.show(check.opener) },
           expect: () => view.renderProcessPid > 0 && app.views[check.sibling].renderProcessPid === view.renderProcessPid },
-        { name: "its process killed (SIGKILL) on screen: This page's process was stopped, with its measured memory and the page that shared it", wait: 1500,
+        { name: "its process killed (SIGKILL) on screen: This page was stopped, with its measured memory and the page that was running with it", wait: 1500,
           act: () => { app.sampleMemory(); check.pid = view.renderProcessPid; probe.sendSignal(check.pid, 9) },
-          expect: () => view.failure && view.failure.kind === "crash" && ownPage.page.title === "This page's process was stopped"
-              && /^127\.0\.0\.1:\d+ was using about \d+ MB \(measured \d\d:\d\d\)\. One other page shared its process\. It is unloaded and loads again when you open it\.$/.test(ownPage.page.body[0])
+          expect: () => view.failure && view.failure.kind === "crash" && ownPage.page.title === "This page was stopped"
+              && /^127\.0\.0\.1:\d+ was using about \d+ MB \(measured \d\d:\d\d\)\. One other page was running with it\. It is unloaded and loads again when you open it\.$/.test(ownPage.page.body[0])
               && ownPage.page.details[0] === "killed · pid " + check.pid && session.current.failed === "error"
               && session.pages[check.sibling].state === "unloaded" && app.views[check.sibling].reloadOnShow && !app.sampling },
         { name: "the page that shared it loads again when opened", wait: 1500, act: () => app.show(check.sibling),
@@ -1057,7 +1062,8 @@ QtObject {
           expect: () => !view.failure && view.title === "opener" },
         { name: "SIGABRT: Chromium's own handler ends the process with an exit code", wait: 1500,
           act: () => { check.pid = view.renderProcessPid; probe.sendSignal(check.pid, 6) },
-          expect: () => { check.said = view.failure ? view.failure.title : ""; return /^The page's process exited with code \d+$|^This page crashed$/.test(check.said) } },
+          expect: () => { check.said = view.failure ? view.failure.title : "";
+              return check.said === "This page crashed" || check.said === "This page stopped unexpectedly" && /^exited with code \d+ · pid \d+$/.test(view.failure.details[0]) } },
         { name: "(reloaded)", wait: 1500, act: () => app.failureAction(view, "reload"), expect: () => !view.failure && view.title === "opener" },
         // After a browser crash (8i): Main.startAfter with the run record the start reads.
         { name: "a start after a run not marked clean: the restore page, no page open, the page that was on screen offered and kept in the run record", wait: 500,
@@ -1630,18 +1636,20 @@ QtObject {
         { name: "Esc: the panel closes and the overlay slides back; the keys on the page", key: Qt.Key_Escape, wait: 900,
           expect: () => !site.open && !hoverPeek.out && peekedRail.slide === 0 && view.activeFocus },
         { name: "(Ctrl+B pins again)", focus: "document.activeElement.blur()", key: Qt.Key_B, mods: ctrl, wait: 1200, expect: () => app.railPinned },
-        // its address prints decoded, as a real one's does (main.cpp puts .test on Qt's IDN list). Whether the first load
-        // ran the scriptlet is only reported: on CEF a new site's process gets the page's scripts by a message its first
-        // document may beat, so the wrapper is then run in the page as it is
-        { name: "(a site whose name is not ASCII: bücher.test, xn--bcher-kva.test to its page)", wait: 1500,
-          act: () => app.go(check.served("bücher", "/plain"), "navigate"), expect: () => view.title === "plain" && String(view.url).indexOf("bücher.test") > 0,
-          page: "document.documentElement.dataset.scriptlet || 'none'", pageExpect: v => true },
+        // its address prints decoded, as a real one's does (main.cpp puts .test on Qt's IDN list). A site not visited
+        // before is a page process of its own on CEF, made as the navigation starts: a load Thyris starts (here an address,
+        // as typed) puts the site's scripts in first, so its first document runs the scriptlet before the page's own
+        // script sees the mark (window.seen)
+        { name: "a site never visited, whose name is not ASCII (bücher.test, xn--bcher-kva.test to its page): its first load runs the scriptlet the list has for it, before the page's own script", wait: 1500,
+          act: () => app.go(check.served("bücher", "/mark"), "navigate"), expect: () => view.title === "mark" && String(view.url).indexOf("bücher.test") > 0,
+          page: "[window.seen, document.documentElement.dataset.scriptlet || 'none'].join(' ')", pageExpect: v => v === "ran ran" },
         { name: "the scriptlets' wrapper made for it, run in that page, runs the scriptlet the list has for it: it names the host as the page does", wait: 800,
           act: () => { const s = view.userScripts.find("adblock-scriptlets");
               probe.report("     its wrapper: " + (s.length > 0 ? JSON.stringify(s[0].sourceCode.slice(0, 70)) : "none"));
+              view.runJavaScript("delete document.documentElement.dataset.scriptlet");
               if (s.length > 0)
                   view.runJavaScript(s[0].sourceCode) },
-          expect: () => view.title === "plain",
+          expect: () => view.title === "mark",
           page: "[location.hostname, new URL('http://bücher.test').hostname, document.documentElement.dataset.scriptlet || 'none'].join(' ')",
           pageExpect: v => / ran$/.test(v) },
     ]
@@ -3113,7 +3121,7 @@ QtObject {
           expect: () => !check.own().extensions.some(x => x.name === "Check extension") && Extensions.loadPaths().length === 0 },
         { name: "Extensions: a folder with no extension in it says why, and the ask has nothing to add", wait: 2500,
           act: () => { check.clickOwn("own:install:action"); check.later(() => Picker.answer([probe.fixtureDir("ext-empty")])) },
-          expect: () => { probe.grab(app, "extensions-problem"); const a = app.currentView.ask; return !!a && a.state === "failed" && /no manifest\.json/.test(a.problem) && check.askText() === a.problem } },
+          expect: () => { probe.grab(app, "extensions-problem"); const a = app.currentView.ask; return !!a && a.state === "failed" && a.problem === "That isn't an extension. Choose the extension's own folder, or its .zip." && check.askText() === a.problem } },
         { name: "(OK)", wait: 500, act: () => app.currentView.answer(app.currentView.ask, "ok"), expect: () => !app.currentView.ask },
         { name: "About: Thyris's version and the Chromium it is built on", wait: 200,
           expect: () => { const r = check.ownRow("identity");
@@ -3185,7 +3193,8 @@ QtObject {
                   && Engine.fonts(w.profile).standard === check.monoFamily } },
         { name: "(the private window closed; the fonts as the engine had them; the main window focused)", wait: 1500,
           act: () => { check.ownPriv.close(); app.prefs.set("fonts", {}); app.prefs.set("engine", "duckduckgo"); probe.back(app) },
-          expect: () => app.privateWindows.length === 0 && app.active && Object.keys(Store.load("settings") ?? {}).filter(k => k !== "listFailure").length === 0 },
+          expect: () => app.privateWindows.length === 0 && app.active
+              && Object.keys(Store.load("settings") ?? {}).filter(k => k !== "listFailure" && k !== "listUpdated").length === 0 },
         { name: "the keys in Settings' filter, another page shown: that page has them, not the hidden filter", wait: 1500,
           act: () => { app.show(check.settingsId); check.later(() => { check.own().first.forceActiveFocus(); app.show(check.fontsPage) }) },
           expect: () => app.ownKind === "" && !check.own().visible && view.title === "fonts" && view.activeFocus && !check.own().activeFocus },
@@ -5621,8 +5630,8 @@ QtObject {
         { name: "a row joined: no frame in 2 s", wait: 2000, act: () => check.frames = 0,
           expect: () => { check.probe.report("     frames: " + check.frames); return check.frames === 0 } },
         { name: "(that page closed)", wait: 800, act: () => app.closePage(check.other), expect: () => !session.pages[check.other] },
-        { name: "(an ask in the card)", wait: 800, act: () => view.asks = [check.standInAsk()], expect: () => !!view.ask && card() > 40 },
-        { name: "an ask waiting in the card: no frame in 2 s", wait: 2000, act: () => check.frames = 0,
+        { name: "(an ask in its sheet)", wait: 800, act: () => view.asks = [check.standInAsk()], expect: () => !!view.ask && check.sheetOut() },
+        { name: "an ask waiting in its sheet: no frame in 2 s", wait: 2000, act: () => check.frames = 0,
           expect: () => { check.probe.report("     frames: " + check.frames); return check.frames === 0 } },
         { name: "(the ask gone; the site panel open, its count polled every second)", focus: "document.activeElement.blur()", key: Qt.Key_I, mods: ctrl, wait: 1000,
           act: () => view.asks = [], expect: () => site.open && !view.ask },
@@ -5955,6 +5964,8 @@ QtObject {
             pages[path] = "<title>" + title + "</title><p>" + title;
         // the private window (PLAN.md 3.14): a link at the top-left to Ctrl+click, and a page that reports the cookies
         // it found and sets one named after its fragment
+        // the first script of a page: whether a scriptlet ran before it (check-mark, on bücher.test)
+        pages["/mark"] = "<title>mark</title><script>window.seen = document.documentElement.dataset.scriptlet || 'none'</script><p>mark";
         pages["/hush"] = "<title>hush one</title><a href=/hush-two style='position:fixed;left:0;top:0;width:300px;height:120px;display:block'>next</a>";
         pages["/hush-two"] = "<title>hush two</title><p>the second page";
         pages["/cookie"] = "<title>cookie</title><script>window.before = document.cookie; document.cookie = location.hash.slice(1) + '=1; path=/'</script>";
