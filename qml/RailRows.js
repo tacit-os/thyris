@@ -212,9 +212,20 @@ function taskName(t, pages) {
     const first = pages[0];
     if (t.named || t.title && (!first || t.title !== first.title))
         return t.title;
-    const host = first ? split(first.url).host : "";
-    const name = host.split(".").slice(-2, -1)[0] || host;
+    const name = siteName(first ? split(first.url).host : "");
     return name ? name.charAt(0).toUpperCase() + name.slice(1) : "New task";
+}
+// a country's second level, under which sites are named: bbc.co.uk, amazon.com.au, ntt.ne.jp
+var secondLevels = ["co", "com", "org", "net", "gov", "edu", "ac", "ne", "or", "go", "gob", "ltd", "plc"];
+// The site's own label in `host`: "skatteverket" for www.skatteverket.se, "bbc" for www.bbc.co.uk; an address by
+// number (192.168.1.5:8080) and a host of one label (localhost:3000) whole
+function siteName(host) {
+    const name = host.replace(/:\d+$/, "");
+    if (/^[\d.]+$/.test(name))
+        return host;
+    const labels = name.split("."), n = labels.length;
+    const second = n > 2 && labels[n - 1].length === 2 && secondLevels.indexOf(labels[n - 2]) >= 0;
+    return labels[n - (second ? 3 : 2)] || host;
 }
 // The icon a task's row leads with: its most recently used page that has one
 function leadIcon(pages) {

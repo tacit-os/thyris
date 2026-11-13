@@ -20,13 +20,15 @@ Controls.Popup {
 
     padding: 4
     margins: 6
-    // as wide as the widest entry (Popup takes its width from the content, which fills the width)
+    // as wide as the widest entry (Popup takes its width from the content, which fills the width), up to 480 px and the
+    // window's width: a long page title is elided (a Popup moves into its window, but keeps its width)
     width: {
         let w = 200;
         for (const e of entries)
             if (!e.separator)
                 w = Math.max(w, 12 + (iconSlot ? 24 : 0) + bodyMetrics.advanceWidth(e.text) + 32 + (e.sub ? 16 : smallMetrics.advanceWidth(e.shortcut ?? "")) + 12);
-        return Math.ceil(w) + 2 * padding + 4;
+        const window = parent ? parent.Window.width : 0;
+        return Math.min(Math.ceil(w) + 2 * padding + 4, 480, window > 0 ? window - 2 * margins : Infinity);
     }
     FontMetrics { id: bodyMetrics; font.family: Theme.font.main; font.pixelSize: Theme.font.body; font.hintingPreference: Font.PreferNoHinting }
     FontMetrics { id: smallMetrics; font.family: Theme.font.main; font.pixelSize: Theme.font.smaller; font.hintingPreference: Font.PreferNoHinting }

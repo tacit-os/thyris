@@ -358,7 +358,8 @@ Item {
                         return;
                     if (mouse.button === Qt.RightButton)
                         strip.openMenu(tab.face ? "always" : tab.header ? "thread" : "page", tab.ref, tab.key, tab, mouse.x, mouse.y);
-                    else if (mouse.button === Qt.MiddleButton && tab.type === "page")
+                    // a pin's face or its tab away closes the pin's page, as the middle button on its cell does
+                    else if (mouse.button === Qt.MiddleButton && (tab.type === "page" || tab.type === "pin" || tab.type === "away"))
                         strip.closePage(tab.ref);
                     else if (mouse.button === Qt.LeftButton && tab.header)
                         strip.toggleTask(tab.ref, tab.open);
@@ -632,7 +633,7 @@ Item {
         else if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) && r.type === "thread") toggleTask(r.ref, r.open);
         else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) strip.activate(r.ref);
         else if (event.key === Qt.Key_Delete && r.type === "thread") strip.command("file", r.ref, null);
-        else if (event.key === Qt.Key_Delete && r.type === "page") closeFromList(r.ref);
+        else if (event.key === Qt.Key_Delete && (r.type === "page" || r.type === "pin" || r.type === "away")) closeFromList(r.ref);
         else if ((event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) && item)
             openMenu(r.type === "pin" ? "always" : r.type === "thread" ? "thread" : "page", r.ref, r.key, item, 20, item.height);
         else return false;

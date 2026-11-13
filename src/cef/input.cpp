@@ -34,9 +34,50 @@ CefMouseEvent Input::mouse(QPointF pos, Qt::KeyboardModifiers keys, Qt::MouseBut
     return e;
 }
 
+// A US layout's virtual key at a place on the keyboard, by xkb's key code (the evdev code + 8, Qt's nativeScanCode), as
+// Chromium falls back to for a key whose character names none: Russian л is K, AZERTY's unshifted & is 1, Shift+1's ! is 1.
+static int usLayoutKey(quint32 code) {
+    if (code >= 10 && code <= 19)
+        return "1234567890"[code - 10];
+    if (code >= 24 && code <= 33)
+        return "QWERTYUIOP"[code - 24];
+    if (code >= 38 && code <= 46)
+        return "ASDFGHJKL"[code - 38];
+    if (code >= 52 && code <= 58)
+        return "ZXCVBNM"[code - 52];
+    switch (code) {
+    case 20: return 0xBD;   // - _
+    case 21: return 0xBB;   // = +
+    case 34: return 0xDB;   // [ {
+    case 35: return 0xDD;   // ] }
+    case 47: return 0xBA;   // ; :
+    case 48: return 0xDE;   // ' "
+    case 49: return 0xC0;   // ` ~
+    case 51: return 0xDC;   // backslash |
+    case 59: return 0xBC;   // , <
+    case 60: return 0xBE;   // . >
+    case 61: return 0xBF;   // / ?
+    case 94: return 0xE2;   // the key between the left Shift and Z
+    default: return 0;
+    }
+}
+
 // Windows' virtual key codes, which Chromium uses for keyCode on every platform
 static int windowsKey(const QKeyEvent *event) {
     const int k = event->key();
+    // the keypad's digits and signs have codes of their own (with Num Lock off its keys are Home, End and the arrows)
+    if (event->modifiers() & Qt::KeypadModifier) {
+        if (k >= Qt::Key_0 && k <= Qt::Key_9)
+            return 0x60 + (k - Qt::Key_0);
+        switch (k) {
+        case Qt::Key_Asterisk: return 0x6A;
+        case Qt::Key_Plus: return 0x6B;
+        case Qt::Key_Minus: return 0x6D;
+        case Qt::Key_Period: case Qt::Key_Comma: return 0x6E;
+        case Qt::Key_Slash: return 0x6F;
+        default: break;
+        }
+    }
     if (k >= Qt::Key_A && k <= Qt::Key_Z)
         return 'A' + (k - Qt::Key_A);
     if (k >= Qt::Key_0 && k <= Qt::Key_9)
@@ -80,7 +121,7 @@ static int windowsKey(const QKeyEvent *event) {
     case Qt::Key_MediaTogglePlayPause: case Qt::Key_MediaPlay: return 0xB3;
     default: break;
     }
-    // punctuation: Windows' OEM codes, by the character the key gives without modifiers (a US layout's names)
+    // punctuation: Windows' OEM codes, by the character the key gives on the person's layout (a US layout's names)
     const QString text = event->text();
     const QChar c = text.size() == 1 ? text.at(0) : (k > 0 && k < 0x10000 ? QChar(k) : QChar());
     switch (c.toLatin1()) {
@@ -99,7 +140,9 @@ static int windowsKey(const QKeyEvent *event) {
     }
     if (c.isLetterOrNumber() && c.unicode() < 0x80)
         return c.toUpper().unicode();
-    return 0;
+    // a letter of another script (Cyrillic, Greek, Arabic, Hebrew, ü), a digit-row key typing a sign (AZERTY's & é ",
+    // Shift+1's !), a dead key: the key at that place on a US layout, as Chromium gives, where it was 0
+    return usLayoutKey(event->nativeScanCode());
 }
 
 CefKeyEvent Input::key(const QKeyEvent *event, cef_key_event_type_t type) {

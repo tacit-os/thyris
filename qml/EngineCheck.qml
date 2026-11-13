@@ -48,6 +48,7 @@ QtObject {
     property var tabIds: []
     property var tabsBefore: null           // the tabs' move: where the session stood
     property string closing: ""
+    property string stripPin: ""
     property int tabCursor: -1
     // the tab of page `id` in the strip, and its centre in window coordinates
     function tabItem(id) {
@@ -135,6 +136,12 @@ QtObject {
         { name: "typing in a field (Ctrl+B above already counted) marks the page edited, in the browser's script world", focus: "field.focus()",
           key: Qt.Key_X, text: "x", expect: () => true, page: "!!window.__browserEdited", world: WebEngineScript.ApplicationWorld },
         { name: "the page itself cannot see the mark", expect: () => true, page: "typeof window.__browserEdited", pageExpect: v => v === "undefined" },
+        // xkb key codes (evdev + 8): K is 45, 1 is 10, the keypad's 5 is 84
+        { name: "keyCode as Chrome gives it for other layouts' keys: Russian л 75, AZERTY's & 49, Shift+1's ! 49, the keypad's 5 101", wait: 600,
+          focus: "window.codes = []; field.addEventListener('keydown', e => codes.push(e.keyCode)); field.focus()",
+          act: () => { probe.press(0x41B, 0, "л", 45); probe.press(Qt.Key_Ampersand, 0, "&", 10); probe.press(Qt.Key_Exclam, Qt.ShiftModifier, "!", 10);
+              probe.press(Qt.Key_5, Qt.KeypadModifier, "5", 84) },
+          expect: () => true, page: "JSON.stringify(codes)", pageExpect: v => v === "[75,49,49,101]" },
         { group: "lifecycle" },
         // only keys comes before, so the page on screen is the keys page
         { setup: true, name: "(a field typed into: the keys page is edited)", focus: "field.focus()", key: Qt.Key_X, text: "x",
@@ -336,6 +343,21 @@ QtObject {
         { name: "(Enter)", wait: 300, key: Qt.Key_Return, expect: () => session.currentPage !== "" },
         { name: "× on the current tab closes its page", wait: 1500,
           act: () => { const id = session.currentPage; check.closing = id; check.tabClose(id) }, expect: () => { return !session.pages[check.closing] } },
+        // a pin's face closes as its cell in the rail does
+        { name: "(a pin, shown: its face in the row)", wait: 1500,
+          act: () => { check.stripPin = session.addAlways(check.served("strip", "/plain"), "strip pin", ""); app.show(check.stripPin) },
+          expect: () => session.currentPage === check.stripPin && !!app.views[check.stripPin] && !!check.tabItem(check.stripPin) },
+        { name: "the middle button on its face closes its page: the face stays, unloaded", wait: 1500,
+          act: () => { const p = check.tabAt(check.stripPin, 0.5, 0.5); probe.pointer(p.x, p.y); probe.pointer(p.x, p.y, Qt.MiddleButton); probe.pointer(p.x, p.y) },
+          expect: () => session.always.indexOf(check.stripPin) >= 0 && session.pages[check.stripPin].state === "unloaded" && !app.views[check.stripPin] && !!check.tabItem(check.stripPin) },
+        { name: "(shown again; the ring on its face, the keys in the row)", wait: 1500,
+          act: () => { app.show(check.stripPin); check.later(() => app.windowTabs.focusList()) },
+          expect: () => { const m = app.windowTabs.listView.model, c = app.windowTabs.cursor;
+              return !!app.views[check.stripPin] && app.windowTabs.listFocused && c >= 0 && m.get(c).type === "pin" && m.get(c).ref === check.stripPin } },
+        { name: "Delete there closes its page too", key: Qt.Key_Delete, wait: 1500,
+          expect: () => session.always.indexOf(check.stripPin) >= 0 && session.pages[check.stripPin].state === "unloaded" && !app.views[check.stripPin] },
+        { name: "(the pin removed)", wait: 600, act: () => { probe.press(Qt.Key_Escape, 0); app.command("removeAlways", check.stripPin, null) },
+          expect: () => session.always.indexOf(check.stripPin) < 0 },
         { name: "Settings: the choice is kept (written to the profile) and Along the side docks the rail again", wait: 900,
           act: () => app.prefs.set("tabs", "side"), expect: () => !app.tabsTop && app.railPinned && !app.windowTabs.visible && app.prefs.values.tabs === undefined },
         { group: "scrollbar" },
@@ -388,6 +410,21 @@ QtObject {
           expect: () => pageScroll.scrollable,
           page: "JSON.stringify([document.compatMode, innerWidth - fixed.offsetWidth])",
           pageExpect: v => { const r = JSON.parse(v); return r[0] === "BackCompat" && r[1] === 0 } },
+        // the page's cursors: three bands of 200 px, the last with a 16 px image of its own, hot at 3, 5
+        { name: "(a page whose bands ask for the copy and alias cursors and an image of its own)", wait: 1500,
+          act: () => app.go("data:text/html," + encodeURIComponent("<!doctype html><title>cursors</title><style>body { margin: 0 } div { height: 200px }</style>"
+              + "<div style='cursor: copy'></div><div style='cursor: alias'></div><div id=own></div><script>const k = document.createElement('canvas');"
+              + "k.width = k.height = 16; k.getContext('2d').fillRect(0, 0, 16, 16); own.style.cursor = 'url(' + k.toDataURL() + ') 3 5, auto'</script>"), "navigate"),
+          expect: () => view.title === "cursors" && !view.loading },
+        { name: "the pointer over cursor: copy shows the copy cursor", wait: 600, act: () => { const p = view.mapToItem(null, 300, 100); probe.pointer(p.x, p.y) },
+          expect: () => probe.cursorOf(view).shape === Qt.DragCopyCursor },
+        { name: "over cursor: alias, the link cursor", wait: 600, act: () => { const p = view.mapToItem(null, 300, 300); probe.pointer(p.x, p.y) },
+          expect: () => probe.cursorOf(view).shape === Qt.DragLinkCursor },
+        { name: "over its own image, that image, hot where the page says", wait: 600, act: () => { const p = view.mapToItem(null, 300, 500); probe.pointer(p.x, p.y) },
+          expect: () => { const c = probe.cursorOf(view); probe.report("     " + JSON.stringify(c));
+              return c.shape === Qt.BitmapCursor && Math.round(c.width / c.ratio) === 16 && c.hotX === 3 && c.hotY === 5 } },
+        { name: "(the long page again, the pointer away)", wait: 2000, act: () => { probe.pointer(700, 400); app.go(check.long(false), "navigate") },
+          expect: () => pageScroll.scrollable },
         { group: "loading" },
         { setup: true, name: "(a page to stay on: the long page)", wait: 2000, act: () => app.go(check.long(false), "navigate"),
           expect: () => view.title === "long" && !view.loading },
@@ -402,6 +439,14 @@ QtObject {
           expect: () => view.waitingFor === "slow.test:" + check.port && view.loadProgress < 30 && card() > 40 },
         { name: "Esc stops it (P key); the card is one line again", focus: "document.activeElement.blur()",
           key: Qt.Key_Escape, wait: 400, expect: () => !view.loading && view.waitingFor === "" && card() === 40 },
+        // a key the page takes is never reported back: it stays among the keys sent, before the next load's start
+        { name: "(the page takes one Esc itself, down and up, as its own menu would)", wait: 400,
+          focus: "document.activeElement.blur(); window.took = 0; for (const t of ['keydown', 'keyup']) addEventListener(t, function once(e) {"
+              + " if (e.key === 'Escape') { e.preventDefault(); took++; removeEventListener(t, once, true) } }, true)",
+          key: Qt.Key_Escape, expect: () => true, page: "took", pageExpect: v => v === 2 },
+        { name: "(the load the server does not answer, again)", wait: 300, act: () => app.go(check.served("slow", "/slow"), "navigate"), expect: () => view.loading },
+        { name: "an Esc after it that the page leaves stops it: the Esc the page took is not taken for this one", focus: "document.activeElement.blur()",
+          key: Qt.Key_Escape, wait: 400, expect: () => !view.loading && view.waitingFor === "" },
         // A suggestion row that comes under a resting pointer is not the current row; a move makes it so.
         { name: "(the card once, to see where its last row comes)", key: Qt.Key_L, mods: ctrl, wait: 900, act: () => probe.leave(),
           expect: () => { check.rowAt = Qt.point(address.toX + address.toWidth / 2, address.toY + address.fullHeight - 68); return address.editing && address.rows.length > 3 } },
@@ -646,6 +691,11 @@ QtObject {
           focus: "window.old = s; navigator.mediaDevices.getUserMedia({ audio: true }).then(s => { window.s = s; log.push('mic again') }, e => log.push('mic ' + e.name))",
           expect: () => view.askCount === 1 && view.ask.types.join() === "location" && session.pages[check.alwaysPage].capturing === "mic",
           page: "JSON.stringify([old.getTracks()[0].readyState, log.indexOf('mic again') >= 0])", pageExpect: v => v === '["ended",true]' || v === '["live",true]' },
+        { name: "Close page on the pin as it records and asks: its cell stays, unloaded, with no microphone, ask or failure left on it", wait: 1500,
+          act: () => app.closePage(check.alwaysPage),
+          expect: () => { const p = session.pages[check.alwaysPage];
+              return !!p && session.always.indexOf(check.alwaysPage) >= 0 && p.state === "unloaded" && !app.views[check.alwaysPage]
+                  && p.capturing === "" && !p.needsYou && p.asking === "" && p.failed === "" } },
         { name: "(Esc denies the location ask; the file, the Always cell and the page it opened go)", wait: 1500,
           act: () => { probe.press(Qt.Key_F6, 0); probe.press(Qt.Key_Escape, 0); downloads.act(check.lastDownload().id, "delete");
                        app.command("removeAlways", check.alwaysPage); app.closePage(check.outPage) },
@@ -891,6 +941,10 @@ QtObject {
         { name: "(Ctrl+B pins again)", focus: "document.activeElement.blur()", key: Qt.Key_B, mods: ctrl, wait: 1200, expect: () => app.railPinned },
         { name: "F11: browser full screen folds the rail", key: Qt.Key_F11, wait: 1200,
           expect: () => app.browserFullScreen && app.visibility === Window.FullScreen && !app.railPinned },
+        { name: "in F11 the window's record (a quit, Ctrl+N) keeps the pinned rail and the size it goes back to", expect: () => {
+            const s = app.windowState();
+            return s.railPinned === true && s.width === 1280 && s.height === 800;
+        } },
         { name: "F11 again leaves it and pins the rail again, as it was", key: Qt.Key_F11, wait: 1200,
           expect: () => !app.browserFullScreen && app.visibility !== Window.FullScreen && app.railPinned && app.width === 1280 },
         { group: "errors" },
@@ -2459,9 +2513,25 @@ QtObject {
     }
     function stopOf(id) { return session.pages[id] ? session.pages[id].stopped ?? null : null }
     function recallUrl(path) { return "http://" + check.recallHost + ":" + check.port + path }
+    // Marked (the @-jump's and the address card's rows) with no letter and with every letter matched: the marked one
+    // drawn wider, in DemiBold, and each measured as wide as it is drawn
+    function marksDrawn() {
+        const make = words => {
+            const m = Qt.createComponent("Browser", "Marked").createObject(app.contentItem, { text: "Thyris, the web browser of Tacit OS", words: words });
+            m.width = m.implicitWidth;
+            return m;
+        };
+        const plain = make([]), all = make(["thyris,", "the", "web", "browser", "of", "tacit", "os"]);
+        const drawn = m => m.children[m.children.length - 1].implicitWidth;
+        const ok = drawn(all) > drawn(plain) + 2 && Math.ceil(drawn(plain)) === plain.implicitWidth && Math.ceil(drawn(all)) === all.implicitWidth;
+        plain.destroy();
+        all.destroy();
+        return ok;
+    }
     readonly property var recallSteps: [
         { group: "recall" },
         check.server,
+        { name: "matched letters in a row are drawn in DemiBold, and the row is measured as it is drawn", expect: () => check.marksDrawn() },
         { name: "(a thread of four pages: headings under a sticky header on screen, and in the background none, 2000 headings over 600 000 px, a short page)",
           wait: 3000, act: () => {
               probe.back(app);
@@ -2920,10 +2990,18 @@ QtObject {
           expect: () => { const r = check.ownRow("forget:" + Asks.originOf(check.local("/")));
               probe.report("     " + JSON.stringify(r && { label: r.label, detail: r.detail, action: r.action }) + " in " + check.own().fold.key);
               return !!r && r.detail.indexOf("Camera allowed") >= 0 && r.detail.indexOf("125 %") >= 0 && r.action === "Forget" && check.own().fold.key === "sites" } },
+        { name: "(Sound Blocked there too, and its open pages muted and at 125 %, as its panel leaves them)", wait: 500,
+          act: () => { const o = Asks.originOf(check.local("/")); app.windowSite.sites.setChoice(o, "sound", "block");
+              for (const v of app.windowSite.viewsOf(o)) { v.muteForSite(true); v.zoomFactor = 1.25 } },
+          expect: () => { const vs = app.windowSite.viewsOf(Asks.originOf(check.local("/")));
+              return vs.length > 0 && vs.every(v => v.audioMuted && Math.abs(v.zoomFactor - 1.25) < 0.001) } },
         { name: "Forget: its choices go back to asking, and its row goes", wait: 800,
           act: () => check.clickOwn("own:forget:" + Asks.originOf(check.local("/")) + ":action"),
           expect: () => { const o = Asks.originOf(check.local("/"));
               return app.windowSite.sites.choice(o, "camera") === "" && app.windowSite.sites.choice(o, "zoom") === "" && !check.ownRow("forget:" + o) } },
+        { name: "and its open pages play sound again, at the default zoom", wait: 300,
+          expect: () => { const o = Asks.originOf(check.local("/")), vs = app.windowSite.viewsOf(o);
+              return vs.length > 0 && vs.every(v => !v.audioMuted && Math.abs(v.zoomFactor - app.windowSite.sites.zoom(o)) < 0.001) } },
         { name: "(a cookie of localhost, set there: first party)", wait: 1500, act: () => { check.own().openView(""); app.go("http://localhost:" + check.port + "/tp-set", "new", "", "tp") },
           page: "window.got", expect: () => view.title === "tp set", pageExpect: v => { probe.report("     localhost's cookies: " + v); return String(v).indexOf("lax=1") >= 0 } },
         { name: "Third-party cookies Allowed: a frame of localhost on 127.0.0.1 reads its cookies", wait: 1500, act: () => app.go(check.local("/tp-frame"), "navigate"),
@@ -2982,6 +3060,8 @@ QtObject {
                   && check.own().extensions.length === 0 && Extensions.loadPaths().length === 0 } },
         { name: "Not now leaves it as it was", wait: 800, act: () => app.currentView.answer(app.currentView.ask, "notnow"),
           expect: () => !app.currentView.ask && check.own().extensions.length === 0 && Extensions.loadPaths().length === 0 },
+        { name: "Extensions says an extension's button and popup can't open, and where passwords go",
+          expect: () => (check.ownRow("popup") ?? {}).label === "An extension's button and popup can't open in Thyris yet. Passwords has Thyris's own manager and takes a Proton Pass export." },
         { name: "Add from a folder again, then Add to Thyris: listed On, the ask says it was added", wait: 2500,
           act: () => { check.clickOwn("own:install:action"); check.later(() => Picker.answer([check.extDir])) },
           expect: () => !!app.currentView.ask && app.currentView.ask.state === "ask" },
@@ -3015,6 +3095,10 @@ QtObject {
         { name: "find, the site panel and zoom are no page's here: Ctrl+F, Ctrl+I and Ctrl+Plus leave it as it is", wait: 900,
           act: () => { check.own().first.forceActiveFocus(); probe.press(Qt.Key_F, ctrl); probe.press(Qt.Key_I, ctrl); probe.press(Qt.Key_Plus, ctrl) },
           expect: () => !rail.finder.open && !site.open && Math.abs(view.zoomFactor - 1) < 0.001 && app.ownKind === "settings" },
+        { name: "> Site permissions and sound says “No site here”, and Enter there does nothing", wait: 900, act: () => app.editAddress(">sound"),
+          expect: () => address.rows.length === 1 && address.rows[0].kind === "stub" && address.rows[0].title === "Site permissions and sound" && address.rows[0].detail === "No site here" },
+        { name: "(Enter: nothing; Esc)", wait: 500, act: () => { probe.press(Qt.Key_Return, 0); check.later(() => probe.press(Qt.Key_Escape, 0)) },
+          expect: () => !address.editing && !site.open && app.ownKind === "settings" },
         // the keys on the page itself: a focused field's caret blinks, a frame each time
         { name: "(settled on Settings, the pointer out of the window, the keys on the page, not its filter)", wait: 1500,
           act: () => { probe.leave(); check.own().show("search"); check.later(() => check.own().target("own:engine").forceActiveFocus()) },
@@ -3685,6 +3769,12 @@ QtObject {
           expect: () => check.pc().opened && check.pc().count === 3 && check.pc().settings.pages === "all" && check.pc().page === 1 },
         { name: "(Enter)", key: Qt.Key_Return, wait: 2500,
           expect: () => { const d = check.lastDownload(); return !check.pc().opened && d.file === "print long (1).pdf" && probe.pdf(d.path).pages === 3 } },
+        // a file name may have 255 bytes: 120 Japanese letters take 360
+        { name: "(the page's title 120 Japanese letters)", wait: 300, focus: "document.title = '日本語'.repeat(40)", expect: () => view.title === "日本語".repeat(40) },
+        { name: "(Ctrl+P)", focus: "document.activeElement && document.activeElement.blur()", key: Qt.Key_P, mods: ctrl, wait: 2000, expect: () => check.pc().opened },
+        { name: "Enter saves it, its name cut to the 78 letters that fit in 236 bytes", key: Qt.Key_Return, wait: 2500,
+          expect: () => { const d = check.lastDownload(); return !check.pc().opened && d.file === "日本語".repeat(26) + ".pdf" && d.state === "done" && probe.pdf(d.path).pages === 3 } },
+        { name: "(the title back)", wait: 300, focus: "document.title = 'print long'", expect: () => view.title === "print long" },
         { name: "Esc cancels: nothing saved, the preview's file gone", wait: 2500, focus: "document.activeElement && document.activeElement.blur()",
           act: () => { check.downloadCount = session.downloads.length; probe.press(Qt.Key_P, ctrl) },
           expect: () => { check.before = check.pc().preview; return check.pc().opened && check.pc().count === 3 } },
@@ -4110,6 +4200,14 @@ QtObject {
         { name: "Show opens what came, as done says it", wait: 800, act: () => app.runNotice(),
           expect: () => app.welcome.visible && app.welcome.phase === "done" && !!app.welcome.result && app.welcome.result.from === "Chrome · Work"
               && app.cardNotice === null },
+        { name: "(1 password stayed in Chrome, as when its key isn't in the keyring)", wait: 300,
+          act: () => app.welcome.result = Object.assign({}, app.welcome.result, { stayed: [{ what: "1 password", why: "Chrome's key isn't in your keyring" }] }),
+          expect: () => app.welcome.phase === "done" && app.welcome.result.stayed.length === 1 },
+        { name: "what stayed offers no Show which, which nothing shows; a show: pick leaves the page as it is", wait: 300,
+          act: () => app.welcome.picked("show:1 password"),
+          expect: () => { const shown = []; const walk = it => { for (const c of it.children) if (c.visible) { if (c.text === "Show which") shown.push(c); walk(c) } };
+              walk(app.welcome);
+              return app.welcome.visible && app.welcome.phase === "done" && shown.length === 0 } },
         { name: "(Esc closes it)", key: Qt.Key_Escape, wait: 600, expect: () => !app.welcome.visible },
         { name: "no password of these profiles in a file of the throwaway data dir (theirs and the keyring's aside) or in this run's output", wait: 500,
           act: () => app.saveAll(),
@@ -5193,6 +5291,44 @@ QtObject {
           expect: () => { const row = check.named(rail, "alwaysRow"), places = check.named(rail, "footPlaces");
               return !!row && row.y >= rail.listView.y + rail.listView.height && !!places && row.y + row.height <= places.mapToItem(rail, 0, 0).y
                   && session.currentPage === check.railCell } },
+        { name: "(a right click on the pin: its menu)", wait: 600,
+          act: () => { check.railCellItem = check.named(rail, "a:" + check.railCell); const p = check.railCellItem.mapToItem(app.contentItem, 20, 20);
+              probe.pointer(p.x, p.y); probe.pointer(p.x, p.y, Qt.RightButton); probe.pointer(p.x, p.y) },
+          expect: () => rail.tabMenu.opened && rail.menuKey === "a:" + check.railCell },
+        { name: "the pin's title gains an unread count: its cell is updated in place, the menu still open on it", wait: 600,
+          act: () => session.update(check.railCell, { title: "(3) " + session.pages[check.railCell].title }),
+          expect: () => rail.tabMenu.opened && check.named(rail, "a:" + check.railCell) === check.railCellItem && rail.tabMenu.parent === check.railCellItem
+              && !!check.named(check.railCellItem, "unread") },
+        { name: "(Esc; the title back)", key: Qt.Key_Escape, wait: 500, act: () => session.update(check.railCell, { title: session.pages[check.railCell].title.replace(/^\(3\) /, "") }),
+          expect: () => !rail.tabMenu.opened },
+        // two servers on one computer, never loaded
+        { name: "a pin on another port of the same host is a cell of its own", wait: 600,
+          act: () => check.portPins = [1, 2].map(n => session.addAlways("http://127.0.0.1:" + (check.port + n) + "/", "port " + n, "")),
+          expect: () => check.portPins[0] !== check.portPins[1] && check.portPins.every(id => !!check.named(rail, "a:" + id)) },
+        { name: "(those pins removed)", wait: 600, act: () => check.portPins.forEach(id => app.command("removeAlways", id, null)),
+          expect: () => check.portPins.every(id => session.always.indexOf(id) < 0) },
+        { name: "(a task of one unloaded page titled in 330 letters)", wait: 300,
+          act: () => { check.railLong = session.addPage(session.newThread(""), check.local("/plain"), ""); session.update(check.railLong, { title: "long title ".repeat(30) }) },
+          expect: () => !!session.pages[check.railLong] },
+        { name: "Move to task ›: the long title elided, in a menu 480 px wide at most and inside the window", wait: 800,
+          act: () => rail.showMenu("p:" + check.railTask[0], true),
+          expect: () => { const s = rail.tabMenu.sub, right = s.contentItem.mapToItem(null, s.contentItem.width, 0).x;
+              probe.report("     " + s.width + " px wide, right edge at " + right);
+              return s.opened && s.entries.some(e => e.arg === session.pages[check.railLong].thread) && s.width <= 480 && right <= app.width } },
+        { name: "(Esc, Esc; that task closed)", wait: 600, act: () => { probe.press(Qt.Key_Escape, 0); probe.press(Qt.Key_Escape, 0); app.closePage(check.railLong) },
+          expect: () => !rail.tabMenu.opened && !session.pages[check.railLong] },
+        // unloaded pages, so nothing is fetched from those sites
+        { name: "a task still named as its first page is called by its site: Bbc for www.bbc.co.uk (not Co), 192.168.1.5:8080 whole", wait: 600,
+          act: () => { check.railNamed = [["https://www.bbc.co.uk/news", "BBC News"], ["http://192.168.1.5:8080/", "Router"]].map(([url, title]) => {
+              const t = session.newThread(title), p = session.addPage(t, url, "");
+              session.update(p, { title: title });
+              session.addPage(t, url + "more", p);
+              return t;
+          }) },
+          expect: () => { const names = check.railNamed.map(t => (check.rowOf("t:" + t) ?? {}).title); probe.report("     " + names.join(", "));
+              return names.join() === "Bbc,192.168.1.5:8080" } },
+        { name: "(those tasks closed)", wait: 600, act: () => check.railNamed.forEach(t => session.threadById(t).pages.slice().forEach(id => app.closePage(id))),
+          expect: () => check.railNamed.every(t => check.rowIndex("t:" + t) < 0) },
         { name: "(the cell removed, the three threads closed)", wait: 1500,
           act: () => { app.command("removeAlways", check.railCell, null); for (const id of [check.railSolo].concat(check.railAway, check.railTask)) app.closePage(id) },
           expect: () => session.always.indexOf(check.railCell) < 0 && ![check.railSolo].concat(check.railAway, check.railTask).some(id => session.pages[id]) },
@@ -5203,6 +5339,10 @@ QtObject {
     property string railLink: ""
     property string railAwayThread: ""
     property string railCell: ""
+    property var railCellItem: null
+    property var railNamed: []
+    property string railLong: ""
+    property var portPins: []
     function rowIndex(key) {
         const m = rail.listView.model;
         for (let i = 0; i < m.count; i++)

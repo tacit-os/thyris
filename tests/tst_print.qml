@@ -42,6 +42,13 @@ TestCase {
         compare(Print.fileName("", "lwn.net"), "lwn.net.pdf");
         compare(Print.fileName("...", ""), "page.pdf");
         compare(Print.fileName("x".repeat(300), "").length, 124, "cut to 120 characters");
+        // a long title of 3-byte letters is cut by bytes too: a file name may have 255
+        const bytes = s => encodeURIComponent(s).replace(/%[0-9A-F]{2}/g, "x").length;
+        const japanese = Print.fileName("日本語".repeat(40), "");
+        verify(bytes(japanese) <= 240, bytes(japanese) + " bytes");
+        compare(japanese, "日本語".repeat(26) + ".pdf", "the most 3-byte letters that fit in 236 bytes");
+        compare(Print.fileName("é".repeat(130), ""), "é".repeat(118) + ".pdf", "2-byte letters");
+        compare(Print.fileName("😀".repeat(70), ""), "😀".repeat(59) + ".pdf", "4-byte letters");
     }
 
     function test_wording() {

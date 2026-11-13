@@ -182,6 +182,10 @@ QtObject {
             threads.splice(threads.indexOf(t), 1);
     }
 
+    // A page whose view went: what only the view said goes with it (its ask, the microphone in use, a failed load), as
+    // at a start (load), so its row says none of it and the memory net may unload it again.
+    readonly property var unloadedPage: ({ state: "unloaded", loading: false, audible: false, muted: false, needsYou: false, asking: "", capturing: "", failed: "" })
+
     // Ctrl+Shift+W, Close thread: a multi-page thread moves into Earlier with its pages, unloaded;
     // a thread of one just closes. Returns the page ids whose views should go.
     function fileThread(threadId) {
@@ -194,7 +198,7 @@ QtObject {
         t.filedAt = Date.now();
         delete t.open;
         for (const id of t.pages)
-            Object.assign(pages[id], { state: "unloaded", loading: false, audible: false, muted: false });
+            Object.assign(pages[id], unloadedPage);
         closed.push({ thread: threadId, title: t.title, filed: true });
         if (current && current.thread === threadId)
             currentPage = mostRecentPage() ?? "";
@@ -391,7 +395,7 @@ QtObject {
                 t.filedAt = Date.now();
                 delete t.open;
                 for (const id of t.pages)
-                    Object.assign(pages[id], { state: "unloaded", loading: false, audible: false, muted: false });
+                    Object.assign(pages[id], unloadedPage);
                 filed.push(t.id);
             } else {
                 const p = pages[t.pages[0]];
@@ -490,10 +494,11 @@ QtObject {
         }
     }
 
-    // The site a URL belongs to, for Always (PLAN.md 3.12): its host without "www.". Hosts, not
-    // registrable domains, so Gmail and Calendar keep a cell each.
+    // The site a URL belongs to, for Always (PLAN.md 3.12): its host without "www.", and its port when the address
+    // names one, so localhost:3000 and localhost:8080 are two sites. Hosts, not registrable domains, so Gmail and
+    // Calendar keep a cell each.
     function siteOf(url) {
-        return ((/^[a-z][a-z0-9+.-]*:\/\/(?:[^\/?#@]*@)?(?:www\.)?([^\/:?#]+)/i.exec(url || "") ?? [])[1] ?? "").toLowerCase();
+        return ((/^[a-z][a-z0-9+.-]*:\/\/(?:[^\/?#@]*@)?(?:www\.)?([^\/?#]+)/i.exec(url || "") ?? [])[1] ?? "").toLowerCase();
     }
 
     // One Always cell per site: an existing cell for the same site is returned instead.
@@ -542,7 +547,7 @@ QtObject {
         p.url = homeOf(pageId);
         delete p.homing;
         delete p.restore;
-        Object.assign(p, { state: "unloaded", loading: false, audible: false, muted: false });
+        Object.assign(p, unloadedPage);
         if (currentPage === pageId)
             currentPage = mostRecentPage() ?? "";
         touch();

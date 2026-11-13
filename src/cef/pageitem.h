@@ -319,7 +319,7 @@ private:
     QPointF m_clickPoint;
     Qt::MouseButton m_clickButton = Qt::NoButton;
     // a key the page left unhandled: the parent item gets it, as Qt WebEngine's view hands it on
-    void unhandledKey(int cefType, int nativeCode);
+    void unhandledKey(int cefType, int nativeCode, uint32_t cefModifiers);
     void editableFocused(bool on) { m_editable = on; }   // PageClient: a text field or editable element has the focus
     bool m_editable = false;
     // what Opsis's script in the page reports (scroll, size)

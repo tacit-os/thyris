@@ -20,6 +20,7 @@ OwnPage {
 
     required property var prefs
     property var sites: null
+    property var viewsOf: origin => []      // Main: the views whose page is at `origin` (SiteInfo.viewsOf)
     property var adblock: null
     property var profile: null              // the main profile: its fonts, extensions and default languages
     property var siteData: null             // the main profile's cookie list
@@ -358,9 +359,19 @@ OwnPage {
         else if (key.startsWith("allowed:"))
             sites.setChoice(key.slice(8), "ads", "");
         else if (key.startsWith("forget:") && sites) {
-            const origin = key.slice(7), e = sites.entries[origin];
-            for (const type of Object.keys((e && e.choices) || {}))
+            const origin = key.slice(7), e = sites.entries[origin], types = Object.keys((e && e.choices) || {});
+            for (const type of types)
                 sites.setChoice(origin, type, "");
+            // its open pages as the site panel leaves them (SiteInfo.set, setZoom): a page applies its site's sound and
+            // zoom only as a document commits
+            for (const v of viewsOf(origin))
+                for (const type of types)
+                    if (type === "sound")
+                        v.muteForSite(false);
+                    else if (type === "zoom")
+                        v.zoomFactor = sites.zoom(origin);
+                    else if (type !== "ads")
+                        v.forgetAnswer(origin, type);
         }
         else if (key.startsWith("clear:"))
             prefs.startClear(key.slice(6));

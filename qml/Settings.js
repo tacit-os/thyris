@@ -549,6 +549,8 @@ function rows(s, sub, filter) {
     ]).concat(s.extensionProblem ? [{ kind: "note", key: "problem", label: s.extensionProblem }] : [])
       .concat(s.extensionsRestart ? [{ kind: "note", key: "restart", label: "Changes to extensions start the next time Thyris opens." }] : [])
       .concat([
+        // the window has no extensions toolbar and the engine no extension handler (#102)
+        { kind: "note", key: "popup", label: "An extension's button and popup can't open in Thyris yet. Passwords has Thyris's own manager and takes a Proton Pass export." },
         { kind: "note", key: "store", label: "On an extension's page in the Chrome Web Store, press Add to Thyris under the address. One added from a folder or .zip isn't checked by the store." },
         { kind: "note", key: "access", label: "Each extension can read the sites it asks for." },
     ]));

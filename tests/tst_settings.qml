@@ -354,5 +354,10 @@ TestCase {
         const rows = Settings.rows(state({ extensions: [fromStore, fromFile], extensionsInstall: true }), "", "").filter(r => r.key.startsWith("ext:"));
         compare(rows.map(r => r.label + "|" + r.value), ["Block It|On", "Mine|Off"]);
         compare(rows[0].detail, "Chrome Web Store · version 2.0 · updated 3 days ago");
+        // with extensions added (and with none), the list says their button and popup can't open, and where passwords go
+        for (const extensions of [[fromStore], []]) {
+            const popup = Settings.rows(state({ extensions: extensions, extensionsInstall: true }), "", "").find(r => r.key === "popup");
+            compare(popup && popup.label, "An extension's button and popup can't open in Thyris yet. Passwords has Thyris's own manager and takes a Proton Pass export.");
+        }
     }
 }

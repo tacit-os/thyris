@@ -588,7 +588,10 @@ Qt::CursorShape cursorShape(cef_cursor_type_t type) {
     case CT_NOTALLOWED: case CT_NODROP: return Qt::ForbiddenCursor;
     case CT_GRAB: return Qt::OpenHandCursor;
     case CT_GRABBING: return Qt::ClosedHandCursor;
+    case CT_COPY: return Qt::DragCopyCursor;
+    case CT_ALIAS: return Qt::DragLinkCursor;
     case CT_NONE: return Qt::BlankCursor;
+    // zoom-in, zoom-out and context-menu have no Qt shape
     default: return Qt::ArrowCursor;
     }
 }
@@ -1797,7 +1800,8 @@ public:
         if (event.type == KEYEVENT_CHAR)
             return false;
         const int type = event.type, native = event.native_key_code;
-        toItem([type, native](PageItem *item) { item->unhandledKey(type, native); });
+        const uint32_t mods = event.modifiers;
+        toItem([type, native, mods](PageItem *item) { item->unhandledKey(type, native, mods); });
         return false;
     }
     // Each site's page runs in a renderer of its own, and a new one does not have the focus given to the page before
@@ -1828,7 +1832,21 @@ public:
                 to->forceActiveFocus(next ? Qt::TabFocusReason : Qt::BacktabFocusReason);
         });
     }
-    bool OnCursorChange(CefRefPtr<CefBrowser>, CefCursorHandle, cef_cursor_type_t type, const CefCursorInfo &) override {
+    bool OnCursorChange(CefRefPtr<CefBrowser>, CefCursorHandle, cef_cursor_type_t type, const CefCursorInfo &info) override {
+        // the page's own image (cursor: url(…)): BGRA, its hot spot in the image's pixels, at the page's scale; the
+        // buffer lasts only for this call
+        if (type == CT_CUSTOM && info.buffer && info.size.width > 0 && info.size.height > 0) {
+            const QImage image = QImage(static_cast<const uchar *>(info.buffer), info.size.width, info.size.height,
+                                        QImage::Format_ARGB32_Premultiplied).copy();
+            const qreal scale = info.image_scale_factor > 0 ? info.image_scale_factor : 1;
+            const QPoint hot(qRound(info.hotspot.x / scale), qRound(info.hotspot.y / scale));
+            toItem([image, scale, hot](PageItem *item) {
+                QPixmap pixmap = QPixmap::fromImage(image);
+                pixmap.setDevicePixelRatio(scale);
+                item->setCursor(QCursor(pixmap, hot.x(), hot.y()));
+            });
+            return true;
+        }
         const Qt::CursorShape shape = cursorShape(type);
         toItem([shape](PageItem *item) { item->setCursor(QCursor(shape)); });
         return true;
@@ -2933,12 +2951,27 @@ void PageItem::keyReleaseEvent(QKeyEvent *event) {
     event->accept();
 }
 
-void PageItem::unhandledKey(int cefType, int nativeCode) {
+void PageItem::unhandledKey(int cefType, int nativeCode, uint32_t cefModifiers) {
     const QEvent::Type type = cefType == KEYEVENT_KEYUP ? QEvent::KeyRelease : QEvent::KeyPress;
-    for (qsizetype i = 0; i < m_keys.size(); ++i) {
+    // The newest such key, with the same Shift, Ctrl, Alt and Meta: a key the page handled is never reported and stays
+    // in the list, and taken first, an Esc the page took (its own menu) was this one, sent before a load began since,
+    // so judged stale and dropped (Esc to stop that load did nothing). The modifiers keep a b from being taken for the
+    // Ctrl+B after it; should the engine not report them as sent, the newest key of the place is taken.
+    const uint32_t held = EVENTFLAG_SHIFT_DOWN | EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN | EVENTFLAG_COMMAND_DOWN;
+    const auto find = [&](bool sameHeld) {
+        for (qsizetype i = m_keys.size() - 1; i >= 0; --i) {
+            const QKeyEvent *key = m_keys.at(i);
+            if (key->type() == type && int(key->nativeScanCode()) == nativeCode
+                && (!sameHeld || (Input::modifiers(key->modifiers(), {}) & held) == (cefModifiers & held)))
+                return i;
+        }
+        return qsizetype(-1);
+    };
+    qsizetype i = find(true);
+    if (i < 0)
+        i = find(false);
+    if (i >= 0) {
         QKeyEvent *key = m_keys.at(i);
-        if (key->type() != type || int(key->nativeScanCode()) != nativeCode)
-            continue;
         m_keys.removeAt(i);
         const qint64 sent = m_keySent.takeAt(i);
         // a printable key in a text field typed into it, though the page left it unhandled: it is not Opsis's
@@ -2952,7 +2985,6 @@ void PageItem::unhandledKey(int cefType, int nativeCode) {
         if (QQuickItem *parent = parentItem(); parent && !typed && !stale)
             QCoreApplication::sendEvent(parent, key);
         delete key;
-        return;
     }
 }
 

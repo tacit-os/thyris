@@ -210,6 +210,7 @@ Window {
         offTheRecord: root.offTheRecord
         isFile: path => Facts.isFile(path)
         article: root.currentView && !root.noPage ? root.currentView.article ?? "" : ""
+        siteHere: root.siteHere
         engine: Settings.engine(root.prefs.get("engine")).name
         searchTemplate: Settings.engine(root.prefs.get("engine")).url
         httpsFirst: root.prefs.get("httpsFirst") !== "off"
@@ -654,6 +655,7 @@ Window {
             onLeaveWanted: root.leaveSettings()
             prefs: root.prefs
             sites: root.hub.siteModel
+            viewsOf: siteInfo.viewsOf
             adblock: root.adblock
             profile: root.hub.profile
             siteData: SiteData
@@ -2952,9 +2954,11 @@ Window {
     // The site panel (PLAN.md 3.9) for the page on screen, where the address card is (folded, in the overlay it
     // holds out); not on the browser's own failure page, under the page's dialog, in page full screen, nor for a
     // page without a host (data:, about:, file:), which has no site. `row`: a row whose choices come out at once.
+    // the page on screen is a site's, whose panel opens: not the browser's own page, a file or an error
+    readonly property bool siteHere: !noPage && !!currentView && !currentView.failure && PageState.hostOf(String(currentView.url)) !== "" && ownKind === ""
     function openSite(row) {
         const v = root.currentView;
-        if (root.noPage || !v || v.failure || v.dialog || root.pageFullScreen || PageState.hostOf(String(v.url)) === "" || root.ownKind !== "")
+        if (!root.siteHere || v.dialog || root.pageFullScreen)
             return false;
         if (newBar.opened)
             newBar.hide();
@@ -3225,7 +3229,7 @@ Window {
                     root.openEarlier(action === "open:Saved" ? "saved" : "history");
                 else
                     root.openOwn("settings", action === "open:Passwords" ? "passwords" : "import");
-            } else if (action !== "show") {
+            } else if (!action.startsWith("show:")) {
                 // close, keep, later, fresh, background (a browser's import goes on: finishBrowser): nothing held stays in memory
                 if (PasswordFile.state === "read")
                     PasswordFile.forget();
@@ -3647,8 +3651,14 @@ Window {
     readonly property bool pageFullScreen: currentView !== null && !noPage && currentView.isFullScreen
     property bool browserFullScreen: false
     property bool pinnedBeforeFullScreen: true
+    property size sizeBeforeFullScreen
     readonly property bool fullWindow: pageFullScreen || browserFullScreen
-    onFullWindowChanged: if (!shotMode) root.visibility = fullWindow ? Window.FullScreen : lastVisibility
+    onFullWindowChanged: {
+        if (fullWindow)
+            sizeBeforeFullScreen = Qt.size(width, height);
+        if (!shotMode)
+            root.visibility = fullWindow ? Window.FullScreen : lastVisibility;
+    }
     onPageFullScreenChanged: {
         if (pageFullScreen) {
             peek.open = false;
@@ -4481,8 +4491,11 @@ Window {
         Backdrop.focus(root);
     }
 
-    // This window's fold and size: its record, and a window opened from it.
-    function windowState() { return { railPinned: railPinned, railWidth: railWidth, width: width, height: height } }
+    // This window's fold and size: its record, and a window opened from it. In full screen, the ones it goes back to.
+    function windowState() {
+        const size = fullWindow ? sizeBeforeFullScreen : Qt.size(width, height);
+        return { railPinned: browserFullScreen ? pinnedBeforeFullScreen : railPinned, railWidth: railWidth, width: size.width, height: size.height };
+    }
     function applyState(s) {
         if (s.width > 0)
             width = s.width;

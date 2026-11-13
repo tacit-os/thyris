@@ -49,11 +49,21 @@ function options(c, page) {
 }
 
 // "camss: CSIPHY0 lanes ignored on x1p42100 · Issue #212.pdf": the page's title as a file name, as Chromium names a
-// printed page; `/` and control characters become spaces, and the name is cut to 120 characters. No title: the host.
+// printed page; `/` and control characters become spaces, and the name is cut to 120 characters, and to 236 bytes of
+// UTF-8 (a Japanese or Thai letter takes 3), so with ".pdf" and Disk.unique's " (n)" it stays inside the 255 bytes a
+// file name may have. No title: the host.
 function fileName(title, host) {
     const clean = Array.from(title || "").map(c => c === "/" || c < " " || c === "\u007f" ? " " : c).join("").replace(/\s+/g, " ").trim();
-    const name = Array.from(clean.replace(/^\.+|\.+$/g, "")).slice(0, 120).join("").trim();
-    return (name || host || "page") + ".pdf";
+    let name = "", bytes = 0;
+    // by code point: Qt's Array.from splits a string into UTF-16 units, and would cut an emoji in two
+    for (const c of [...clean.replace(/^\.+|\.+$/g, "")].slice(0, 120)) {
+        const n = c.codePointAt(0);
+        bytes += n < 0x80 ? 1 : n < 0x800 ? 2 : n < 0x10000 ? 3 : 4;
+        if (bytes > 236)
+            break;
+        name += c;
+    }
+    return (name.trim() || host || "page") + ".pdf";
 }
 
 function heading(title) { return "Print " + (title || "this page") }

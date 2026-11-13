@@ -14,8 +14,12 @@ Item {
     property color color: Theme.colOnLayer0
 
     readonly property var runs: Recall.marks(text, words)
-    FontMetrics { id: plain; font.family: Theme.font.main; font.pixelSize: marked.pixelSize; font.hintingPreference: Font.PreferNoHinting }
-    FontMetrics { id: bold; font.family: Theme.font.main; font.pixelSize: marked.pixelSize; font.weight: Font.DemiBold; font.hintingPreference: Font.PreferNoHinting }
+    // The weight goes by font.weight, with no wght axis set: a span's font-weight cannot move an axis the font pins
+    // (Label pins wght 450, so its DemiBold runs drew at 450), and Qt sets a variable font's wght from the weight. The
+    // metrics measure the same way as the text is drawn.
+    readonly property var axes: ({ "wdth": Theme.font.mainAxes.wdth })
+    FontMetrics { id: plain; font.family: Theme.font.main; font.pixelSize: marked.pixelSize; font.variableAxes: marked.axes; font.weight: Theme.font.mainAxes.wght; font.hintingPreference: Font.PreferNoHinting }
+    FontMetrics { id: bold; font.family: Theme.font.main; font.pixelSize: marked.pixelSize; font.variableAxes: marked.axes; font.weight: Font.DemiBold; font.hintingPreference: Font.PreferNoHinting }
     function metrics(r) { return r.marked ? bold : plain }
 
     implicitWidth: Math.ceil(runs.reduce((w, r) => w + metrics(r).advanceWidth(r.text), 0))
@@ -43,6 +47,8 @@ Item {
         elide: Text.ElideNone
         text: marked.html
         font.pixelSize: marked.pixelSize
+        font.variableAxes: marked.axes
+        font.weight: Theme.font.mainAxes.wght
         color: marked.color
     }
 }

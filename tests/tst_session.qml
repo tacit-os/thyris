@@ -118,6 +118,10 @@ TestCase {
         compare(s.pages[ids[0]].state, "unloaded", "its views go, so its pages show unloaded when it comes back");
         compare(s.pages[ids[0]].audible, false);
         compare(s.currentPage, "");
+        const [s2, t2, ids2] = withThread("t", ["call", "two"]);
+        s2.update(ids2[0], { state: "live", capturing: "mic", needsYou: true, asking: "camera", failed: "crashed" });
+        s2.fileThread(t2);
+        compare(["capturing", "needsYou", "asking", "failed"].map(k => s2.pages[ids2[0]][k]), ["", false, "", ""], "what the view said goes with it");
         const solo = s.newThread("solo");
         const p = s.addPage(solo, "https://example.org/solo", "");
         compare(s.fileThread(solo), [p], "Ctrl+Shift+W on a thread of one closes it");
@@ -503,6 +507,15 @@ TestCase {
         verify(!s.leavesAlways(cell, "javascript:void(0)"));
         const [s2, t, ids] = withThread("t", ["x"]);
         verify(!s2.leavesAlways(ids[0], "https://lwn.net/"), "only Always pages");
+        // a port is a site of its own: two servers on one computer, a router and the Pi-hole beside it
+        const dev = s.addAlways("http://localhost:3000/", "dev", "");
+        verify(!s.leavesAlways(dev, "http://localhost:3000/app"));
+        verify(s.leavesAlways(dev, "http://localhost:8080/docs"), "another port leaves the pin");
+        const docs = s.addAlways("http://localhost:8080/", "docs", "");
+        verify(docs !== dev, "the second port gets a cell of its own");
+        compare(s.addAlways("http://localhost:3000/other", "dev", ""), dev, "one cell per site and port");
+        compare(s.siteOf("http://user:secret@192.168.1.1:8080/admin"), "192.168.1.1:8080");
+        compare(s.siteOf("https://www.example.com/"), "example.com");
     }
 
     function test_keepInAlwaysMovesAThreadOfOne() {
@@ -557,6 +570,9 @@ TestCase {
         compare(s.always, [a], "the cell stays");
         compare(s.pages[a].state, "unloaded");
         compare(s.pages[a].url, "https://mail.example/", "back at its start");
+        s.update(a, { state: "live", capturing: "mic", needsYou: true, asking: "camera", failed: "crashed" });
+        s.closeAlways(a);
+        compare(["capturing", "needsYou", "asking", "failed"].map(k => s.pages[a][k]), ["", false, "", ""], "no mic, ask or failure on the closed pin");
         compare(s.currentPage, p, "the page on screen gives way");
         compare(s.closeAlways(p), [], "only a pin");
     }
@@ -818,8 +834,10 @@ TestCase {
         const stop = { url: w.pages[lone].url, heading: "Momsdeklaration", index: 2, offset: 30, x: 0, y: 900, at: 1 };
         w.setStopped(lone, stop);
         const order = w.openThreads().map(x => x.id);
+        w.update(taskPages[0], { state: "live", capturing: "mic", needsYou: true, asking: "camera", failed: "crashed" });
         const gone = w.closeWindow("Momsdeklaration - Skatteverket", { railPinned: false, railWidth: 280, width: 1000, height: 700 });
         compare(gone.sort(), taskPages.concat([lone]).sort(), "every page's view goes");
+        compare(["capturing", "needsYou", "asking", "failed"].map(k => s.pages[taskPages[0]][k]), ["", false, "", ""], "a filed page keeps nothing its view said");
         verify(s.threadById(task).earlier, "a multi-page thread is filed under Earlier");
         compare(s.threadById(single), null, "a single page goes to closed pages");
         compare(s.pages[lone], undefined);

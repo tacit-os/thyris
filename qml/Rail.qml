@@ -1017,10 +1017,13 @@ Item {
             rowSpacing: 4
             Repeater {
                 id: cellRepeater
-                model: rail.cells
+                // by id, so a pin's change (its title, a load, the page on screen) updates its cell in place: a new list
+                // of the cells' data made every cell again, and an open pin menu, the hover and a press went with them
+                model: rail.cells.map(c => c.id)
                 delegate: Item {
                     id: cell
-                    required property var modelData
+                    required property int index
+                    readonly property var modelData: rail.cells[index] ?? ({})
                     readonly property bool lit: !!cell.modelData.current || cellArea.containsMouse
                     objectName: "a:" + (cell.modelData.id ?? "")
                     width: 40

@@ -486,7 +486,9 @@ FocusScope {
                         font.pixelSize: 15
                         color: Theme.inkSec
                     }
-                    TextLink { visible: parent.linked; anchors.verticalCenter: parent.verticalCenter; size: 15; text: modelData.link ?? "Show which"; onPicked: welcome.picked("show:" + modelData.what) }
+                    // only an item that names its own way (`link`): nothing shows which ones stayed yet, and a Show which
+                    // that did nothing closed the page
+                    TextLink { visible: parent.linked && !!modelData.link; anchors.verticalCenter: parent.verticalCenter; size: 15; text: modelData.link ?? ""; onPicked: welcome.picked("show:" + modelData.what) }
                 }
             }
         }

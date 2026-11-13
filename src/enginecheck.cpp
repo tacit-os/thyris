@@ -28,6 +28,7 @@
 #include <QPdfDocument>
 #include <QPdfSelection>
 #include <QProcess>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QMutex>
 #include <QSet>
@@ -64,15 +65,35 @@ static QWindow *target() {
     return window;
 }
 
-void EngineCheck::press(int key, int modifiers, const QString &text) {
+void EngineCheck::press(int key, int modifiers, const QString &text, int scanCode) {
     QWindow *window = target();
     // A page's select popup is a window of its own; offscreen nothing gives the focus back when it
     // closes, as a compositor does, and window shortcuts (the R keys) only fire in the focus window.
     if (!QGuiApplication::focusWindow())
         QWindowSystemInterface::handleFocusWindowChanged<QWindowSystemInterface::SynchronousDelivery>(window, Qt::ActiveWindowFocusReason);
     const auto mods = Qt::KeyboardModifiers(modifiers);
+    if (scanCode > 0) {
+        // no synchronous form of the extended event: each is flushed through at once
+        for (const QEvent::Type type : {QEvent::KeyPress, QEvent::KeyRelease}) {
+            QWindowSystemInterface::handleExtendedKeyEvent(window, type, key, mods, quint32(scanCode), 0, 0, text);
+            QWindowSystemInterface::flushWindowSystemEvents();
+        }
+        return;
+    }
     QWindowSystemInterface::handleKeyEvent<QWindowSystemInterface::SynchronousDelivery>(window, QEvent::KeyPress, key, mods, text);
     QWindowSystemInterface::handleKeyEvent<QWindowSystemInterface::SynchronousDelivery>(window, QEvent::KeyRelease, key, mods, text);
+}
+
+QVariantMap EngineCheck::cursorOf(QObject *object) const {
+    const auto *item = qobject_cast<QQuickItem *>(object);
+    if (!item)
+        return {};
+    const QCursor c = item->cursor();
+    if (c.shape() != Qt::BitmapCursor)
+        return {{QStringLiteral("shape"), int(c.shape())}};
+    const QPixmap p = c.pixmap();
+    return {{QStringLiteral("shape"), int(c.shape())}, {QStringLiteral("width"), p.width()}, {QStringLiteral("height"), p.height()},
+            {QStringLiteral("ratio"), p.devicePixelRatio()}, {QStringLiteral("hotX"), c.hotSpot().x()}, {QStringLiteral("hotY"), c.hotSpot().y()}};
 }
 
 void EngineCheck::pointer(qreal x, qreal y, int buttons, int modifiers) {

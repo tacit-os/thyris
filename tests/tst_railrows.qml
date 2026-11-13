@@ -202,6 +202,14 @@ TestCase {
         compare(RailRows.build(s, {})[0].title, "Moms");
         s.rename(s.threads[0].id, "Momsdeklaration - Skatteverket");
         compare(RailRows.build(s, {})[0].title, "Momsdeklaration - Skatteverket", "renamed by hand, even as its first page");
+        // past a country's second level; an address by number, and a host of one label, whole
+        const named = url => RailRows.taskName({ title: "t" }, [{ url: url, title: "t" }]);
+        compare(named("https://www.bbc.co.uk/news"), "Bbc");
+        compare(named("https://shop.amazon.com.au/"), "Amazon");
+        compare(named("https://www.example.com:8443/"), "Example");
+        compare(named("https://co.uk/"), "Co");
+        compare(named("http://192.168.1.5:8080/"), "192.168.1.5:8080");
+        compare(named("http://localhost:3000/"), "Localhost:3000");
     }
     // an open task's run of three or more pages named alike but for a number, all unloaded, is one row
     function test_runsFoldIntoOneRow() {

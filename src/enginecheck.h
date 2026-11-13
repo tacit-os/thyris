@@ -39,8 +39,12 @@ public:
     // Whether it holds an item of the browser's for `origin` and `user` whose secret is `secret` (any, for "").
     Q_INVOKABLE bool keyringHolds(const QString &origin, const QString &user, const QString &secret) const;
 
-    // A press and release of `key` with `modifiers` into the focused window.
-    Q_INVOKABLE void press(int key, int modifiers, const QString &text = QString());
+    // The cursor `item` sets: { shape (Qt::CursorShape), and for an image's, width, height, ratio, hotX, hotY }; none
+    // set is the arrow.
+    Q_INVOKABLE QVariantMap cursorOf(QObject *item) const;
+    // A press and release of `key` with `modifiers` into the focused window; `scanCode`, xkb's key code (the evdev code
+    // + 8), names the physical key, as a keyboard's does (0: none).
+    Q_INVOKABLE void press(int key, int modifiers, const QString &text = QString(), int scanCode = 0);
     // The mouse at `x`, `y` in the window with `buttons` held (entering first if it was outside); a
     // change in `buttons` is a press or release there, with keyboard `modifiers` held (Shift-click).
     Q_INVOKABLE void pointer(qreal x, qreal y, int buttons = 0, int modifiers = 0);

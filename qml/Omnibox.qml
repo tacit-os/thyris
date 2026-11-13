@@ -14,6 +14,9 @@ QtObject {
     property var isFile: path => false
     // the page on screen's article (BrowserView.article): "none" makes > Reader view say "No article here"
     property string article: ""
+    // the page on screen has a site whose panel opens (Main.siteHere): false makes > Site permissions and sound say
+    // "No site here"
+    property bool siteHere: true
     // a private window's (PLAN.md 3.14): no Earlier rows, no Always action and no import; its session and history
     // are the window's own
     property bool offTheRecord: false
@@ -229,9 +232,11 @@ QtObject {
     function prefixRows(m, q, whole) {
         if (m === "actions") {
             const words = q.toLowerCase().split(/\s+/).filter(w => w.length > 0);
-            // a page with no article offers Reader view as a row that does nothing, saying why (PLAN.md 3.9)
+            // a page with no article offers Reader view as a row that does nothing, saying why (PLAN.md 3.9); the same
+            // for the site panel on a page with no site (the browser's own pages, a file, an error)
+            const stub = (a, why) => ({ kind: "stub", glyph: a.glyph, title: a.title, detail: why });
             return actions.filter(a => words.every(w => a.title.toLowerCase().includes(w)) && !(offTheRecord && a.action === "always"))
-                .map(a => a.action === "reader" && article === "none" ? { kind: "stub", glyph: a.glyph, title: a.title, detail: "No article here" } : a);
+                .map(a => a.action === "reader" && article === "none" ? stub(a, "No article here") : a.action === "site" && !siteHere ? stub(a, "No site here") : a);
         }
         if (m === "find") {
             const find = { kind: "find", glyph: "find_in_page", title: q ? "Find \u201c" + q + "\u201d" : "Find on this page", detail: "", text: q };
