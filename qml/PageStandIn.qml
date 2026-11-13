@@ -48,6 +48,7 @@ Rectangle {
     property var choosing: null
     property var popup: null
     property int blockedPopups: 0
+    property var blockedUse: []
     property bool isFullScreen: false
     // failures and the page's process (PLAN.md 3.8 8f-8h), set by the shots
     property var failure: null

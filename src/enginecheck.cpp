@@ -380,14 +380,15 @@ bool EngineCheck::fakeApp(const QString &scheme, const QString &name) {
         return false;
     const QString dir = data + QStringLiteral("/applications");
     QDir().mkpath(dir);
-    const QString id = QStringLiteral("browsercheck-") + scheme + QStringLiteral(".desktop");
+    const QString type = scheme.contains(u'/') ? scheme : QStringLiteral("x-scheme-handler/") + scheme;
+    const QString id = QStringLiteral("browsercheck-") + QString(scheme).replace(u'/', u'-') + QStringLiteral(".desktop");
     QFile desktop(dir + u'/' + id), list(dir + QStringLiteral("/mimeapps.list"));
     if (!desktop.open(QIODevice::WriteOnly) || !list.open(QIODevice::Append))
         return false;
-    desktop.write(("[Desktop Entry]\nType=Application\nName=" + name + "\nExec=true %u\nMimeType=x-scheme-handler/" + scheme + ";\n").toUtf8());
+    desktop.write(("[Desktop Entry]\nType=Application\nName=" + name + "\nExec=true %u\nMimeType=" + type + ";\n").toUtf8());
     if (list.size() == 0)
         list.write("[Default Applications]\n");
-    list.write(("x-scheme-handler/" + scheme + "=" + id + "\n").toUtf8());
+    list.write((type + "=" + id + "\n").toUtf8());
     return true;
 }
 

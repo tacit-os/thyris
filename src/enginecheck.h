@@ -84,7 +84,8 @@ public:
     Q_INVOKABLE int closedPort();
     // Sends `signal` to process `pid` (a page process of this check's own engine, a browser it launched).
     Q_INVOKABLE bool sendSignal(qint64 pid, int signal);
-    // An app named `name` as the default for links of `scheme`, in the throwaway data dir's applications.
+    // An app named `name` as the default for links of `scheme`, or for files of a MIME type (one with a /, "text/plain"),
+    // in the throwaway data dir's applications.
     Q_INVOKABLE bool fakeApp(const QString &scheme, const QString &name);
     // A file named `name` (a relative path, its folders made) holding `text` in the throwaway data dir, for a file
     // input (a `program`: one the owner may run); its path.

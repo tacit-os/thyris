@@ -935,6 +935,32 @@ public:
         CefRefPtr<PageClient> m_client;
         IMPLEMENT_REFCOUNTING(DevToolsTap);
     };
+    // PageItem::lookUpConnection, on CEF's UI thread, where the navigation entry is read
+    void lookUpConnection() {
+        CefRefPtr<PageClient> self(this);
+        CefPostTask(TID_UI, base::BindOnce([](CefRefPtr<PageClient> c) {
+            CefRefPtr<CefBrowser> page = c->browser();
+            CefRefPtr<CefNavigationEntry> entry = page ? page->GetHost()->GetVisibleNavigationEntry() : nullptr;
+            CefRefPtr<CefSSLStatus> ssl = entry ? entry->GetSSLStatus() : nullptr;
+            QByteArray der;
+            QString protocol;
+            if (ssl && ssl->IsSecureConnection()) {
+                if (CefRefPtr<CefX509Certificate> leaf = ssl->GetX509Certificate())
+                    if (CefRefPtr<CefBinaryValue> bytes = leaf->GetDEREncoded()) {
+                        der.resize(qsizetype(bytes->GetSize()));
+                        bytes->GetData(der.data(), bytes->GetSize(), 0);
+                    }
+                // QUIC (HTTP/3) carries TLS 1.3's own handshake
+                switch (ssl->GetSSLVersion()) {
+                case SSL_CONNECTION_VERSION_TLS1_3:
+                case SSL_CONNECTION_VERSION_QUIC: protocol = QStringLiteral("TLS 1.3"); break;
+                case SSL_CONNECTION_VERSION_TLS1_2: protocol = QStringLiteral("TLS 1.2"); break;
+                default: break;
+                }
+            }
+            c->toItem([der, protocol](PageItem *item) { emit item->connectionFound(der, protocol); });
+        }, self));
+    }
     // a DevTools method of the checks' own (PageItem::devtoolsCall), on CEF's UI thread
     void devtoolsCall(const QString &method, const QJsonObject &params) {
         CefRefPtr<PageClient> self(this);
@@ -3737,6 +3763,13 @@ void PageItem::setAudioMuted(bool muted) {
 void PageItem::waitForPage() {
     if (m_client)
         m_client->waitForPage();
+}
+
+void PageItem::lookUpConnection() {
+    if (m_client)
+        m_client->lookUpConnection();
+    else
+        QMetaObject::invokeMethod(this, [this] { emit connectionFound({}, {}); }, Qt::QueuedConnection);
 }
 
 void PageItem::endAndReload() {

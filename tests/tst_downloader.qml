@@ -2,6 +2,7 @@ import QtQuick
 import QtTest
 import Browser
 import "../qml"
+import "../qml/Downloads.js" as Downloads
 
 // Downloader.qml: a row's actions on its record (PLAN.md 3.8 8d).
 TestCase {
@@ -14,6 +15,8 @@ TestCase {
         Store.files = {};
         Disk.removed = [];
         Apps.withdrawn = [];
+        Apps.lookedUp = [];
+        Apps.lastOpened = "";
     }
 
     // Try again on a file Thyris quit before: its old part-file goes, so the name is free again and nothing is left behind
@@ -41,6 +44,7 @@ TestCase {
         Apps.noticeAction(done, "show");
         compare(Apps.lastRevealed, Disk.downloads + "/a.pdf");
         Apps.noticeAction(done, "open");
+        Apps.fileFound(Disk.downloads + "/a.pdf", true, "Papers");
         compare(Apps.lastOpened, Disk.downloads + "/a.pdf");
         verify(s.downloadById(done).opened > 0);
         compare(Apps.withdrawn, [], "a finished file's notification is left to the shell");
@@ -52,6 +56,37 @@ TestCase {
         downloader.act(gone, "remove");
         compare(Apps.withdrawn, [failed, gone], "Remove in the rail deals with it too");
         verify(!s.downloadById(gone));
+    }
+
+    // Open looks first (Apps.lookUpFile): a file that is gone, or one no app opens, opens nothing, says why in its row and is
+    // not counted as opened; once an app takes it, it opens and the row's words go
+    function test_openSaysWhyNothingOpened() {
+        const s = createTemporaryObject(sessionComponent, this);
+        const downloader = createTemporaryObject(downloaderComponent, this, { session: s });
+        const zip = Disk.downloads + "/camss-v3.zip", gone = Disk.downloads + "/notes.txt", bare = Disk.downloads + "/README";
+        const add = (file, path) => s.addDownload({ url: "https://example.org/" + file, file: file, path: path, state: "done", total: 10, received: 10 });
+        const z = add("camss-v3.zip", zip), g = add("notes.txt", gone), b = add("README", bare);
+        downloader.act(z, "open");
+        compare(Apps.lookedUp, [zip]);
+        compare(Apps.lastOpened, "", "nothing opens before the answer");
+        Apps.fileFound(zip, true, "");
+        compare(Apps.lastOpened, "");
+        verify(!s.downloadById(z).opened);
+        compare(Downloads.parts(s.downloadById(z), Date.now()).note, "No app opens .zip files");
+        downloader.act(g, "open");
+        Apps.fileFound(gone, false, "");
+        verify(!s.downloadById(g).opened);
+        compare(Downloads.parts(s.downloadById(g), Date.now()).note, "The file is gone");
+        downloader.act(b, "open");
+        Apps.fileFound(bare, true, "");
+        compare(Downloads.parts(s.downloadById(b), Date.now()).note, "No app opens this file");
+        Apps.fileFound(zip, true, "File Roller");
+        compare(Apps.lastOpened, "", "an answer nobody asked for opens nothing");
+        downloader.act(z, "open");
+        Apps.fileFound(zip, true, "File Roller");
+        compare(Apps.lastOpened, zip);
+        verify(s.downloadById(z).opened > 0);
+        compare(Downloads.parts(s.downloadById(z), Date.now()).note, "");
     }
 
     // what Ctrl+Q counts in its ask: the files coming, not one paused or done

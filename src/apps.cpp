@@ -73,6 +73,36 @@ void Apps::lookUp(const QString &scheme) {
     process->start(QStringLiteral("xdg-mime"), {QStringLiteral("query"), QStringLiteral("default"), QStringLiteral("x-scheme-handler/") + scheme});
 }
 
+void Apps::lookUpFile(const QString &path) {
+    if (!QFileInfo(path).isFile()) {
+        emit fileFound(path, false, QString());
+        return;
+    }
+    auto *process = new QProcess(this);
+    connect(process, &QProcess::finished, this, [this, process, path] {
+        const QString id = QString::fromUtf8(process->readAllStandardOutput()).section(u'\n', 0, 0).trimmed();
+        process->deleteLater();
+        if (id.isEmpty()) {
+            emit fileFound(path, true, QString());
+            return;
+        }
+        const QString name = desktopName(id);
+        emit fileFound(path, true, name.isEmpty() ? QString(id).remove(QRegularExpression(QStringLiteral("\\.desktop$"))) : name);
+    });
+    connect(process, &QProcess::errorOccurred, this, [this, process, path](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;
+        process->deleteLater();
+        emit fileFound(path, true, QString());
+    });
+    process->setProcessEnvironment(outside());
+    // xdg-open's own steps for a file on a desktop it does not know, as Hyprland is (its open_generic): the type xdg-mime
+    // gives the file, then that type's default
+    process->start(QStringLiteral("sh"), {QStringLiteral("-c"),
+                                          QStringLiteral("t=$(xdg-mime query filetype \"$1\" | sed 's/;.*//') && [ -n \"$t\" ] && xdg-mime query default \"$t\""),
+                                          QStringLiteral("sh"), path});
+}
+
 void Apps::open(const QString &url) {
     m_lastOpened = url;
     emit opened();

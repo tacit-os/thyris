@@ -3,12 +3,13 @@
 
 // Downloads (PLAN.md 3.8 8d): a download's words, its rail row and where it shows. Session keeps the
 // records, Downloader.qml runs them: { id, page, url, file, path, total, received, left, state, reason,
-// warn, started, finished, opened, from }
+// warn, started, finished, opened, unopened, from }
 //   state   "running", "paused", "done", "failed", or "blocked" (an http file from an https page, not
 //           fetched until Keep)
 //   total   bytes, -1 while unknown; `left`: seconds to go, -1 while unknown
 //   reason  a failure in a word or two (reason()), for "Failed: <reason>"
 //   warn    "program" on a finished file that runs as a program, until Keep
+//   unopened why its last Open opened nothing: "gone" (the file is not there) or "no app" (none for its type)
 //   from    { title, icon, always, url, thread } of the page that started it: the Downloads group's
 //           "from" line, and the origin written on the file
 
@@ -146,6 +147,16 @@ function failure(reason) {
     return "It couldn't be finished.";
 }
 
+// Why Open opened nothing, for a finished file's row: "The file is gone", "No app opens .zip files"; "" when it did
+function unopened(d) {
+    if (d.unopened === "gone")
+        return "The file is gone";
+    if (d.unopened !== "no app")
+        return "";
+    const ext = /\.([^.\/]+)$/.exec(d.file || "");
+    return ext ? "No app opens ." + ext[1] + " files" : "No app opens this file";
+}
+
 // The controls a coming or finished row shows with the pointer on it, as glyphs: { name, glyph, tip }
 function controls(status) {
     switch (status) {
@@ -203,6 +214,7 @@ function parts(d, now) {
         break;
     case "done":
         out.info = size(d.total > 0 ? d.total : d.received) + " · " + finishedAt(d.finished || now, now);
+        out.note = unopened(d);
         break;
     case "failed":
         out.failed = "error";

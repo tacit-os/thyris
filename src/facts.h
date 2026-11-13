@@ -68,6 +68,9 @@ public:
     // issuer, from, until (ms since the epoch), sha256, pem } of what the host presents now, or {} when the
     // handshake failed. Nothing is sent after it, and the chain is not judged here: the engine did for the page.
     Q_INVOKABLE void lookUpTls(const QString &host, int port);
+    // The CEF build's answer in tlsFound's terms, but no cipher: the page's own connection as its view recorded it
+    // (PageItem::lookUpConnection), its leaf certificate in DER and its TLS version; {} without a certificate
+    Q_INVOKABLE QVariantMap connection(const QByteArray &der, const QString &protocol) const;
 
 signals:
     void reachabilityChanged();

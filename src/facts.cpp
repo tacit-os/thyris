@@ -228,6 +228,15 @@ void Facts::lookUpStop(qint64 pid, const QString &cgroup, double since) {
     });
 }
 
+QVariantMap Facts::connection(const QByteArray &der, const QString &protocol) const {
+    QVariantMap facts = certificateFacts(der);
+    if (facts.isEmpty())
+        return {};
+    facts.insert(QStringLiteral("protocol"), protocol);
+    facts.insert(QStringLiteral("pem"), QString::fromLatin1(QSslCertificate(der, QSsl::Der).toPem()));
+    return facts;
+}
+
 void Facts::lookUpTls(const QString &host, int port) {
     // check mode: its *.test hosts are this machine (as main.cpp maps them for the engine), and no other is asked
     const bool check = dryRun && host.endsWith(u".test");

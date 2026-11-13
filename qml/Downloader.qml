@@ -20,6 +20,7 @@ QtObject {
     property var requests: ({})         // record id -> WebEngineDownloadRequest, this run's
     property var listed: []             // pages whose several downloads are listed in place
     property var fetchQueue: []         // record ids waiting on the fetcher, the first loading
+    property var opening: ({})          // path -> the record whose Open waits on Apps.lookUpFile
     // the address the fetcher loads; "" while it has none (Main's fetcher exists only then)
     property string fetchUrl: ""
     // a file of this run still coming, not paused (the fetcher's too): quitting would cancel it (Main.lastWindowGone)
@@ -175,9 +176,10 @@ QtObject {
             session.removeDownload(id);
             break;
         case "open":
-            Apps.open(d.path);
-            session.updateDownload(id, { opened: Date.now() });
-            schedule();
+            // first that the file is there and an app opens its type, as an external link's app is looked up first
+            // (fileLookUps)
+            opening[d.path] = id;
+            Apps.lookUpFile(d.path);
             break;
         case "show":
             Apps.reveal(d.path);
@@ -258,6 +260,27 @@ QtObject {
         function onNoticeAction(key, action) {
             if (downloader.session.downloadById(key))
                 downloader.act(key, action);
+        }
+    }
+
+    // Open's answer: the file opens, or its row says why not ("The file is gone", "No app opens .zip files"; Downloads.parts)
+    // and it does not count as opened
+    property Connections fileLookUps: Connections {
+        target: Apps
+        function onFileFound(path, exists, name) {
+            const id = downloader.opening[path];
+            if (id === undefined)
+                return;
+            delete downloader.opening[path];
+            if (!downloader.session.downloadById(id))
+                return;
+            if (!exists || name === "") {
+                downloader.session.updateDownload(id, { unopened: exists ? "no app" : "gone" });
+                return;
+            }
+            Apps.open(path);
+            downloader.session.updateDownload(id, { opened: Date.now(), unopened: "" });
+            downloader.schedule();
         }
     }
 

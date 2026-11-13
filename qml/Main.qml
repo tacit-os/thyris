@@ -764,7 +764,7 @@ Window {
         }
 
         // the hovered link, docked flush into the bottom-left corner; bottom-right when the pointer nears it.
-        // While folded also a download's 3 s notice (PLAN.md 3.5 5a), under a hovered link.
+        // While folded also a download's or a background page's ask's 3 s notice (PLAN.md 3.5 5a), under a hovered link.
         HoverHandler { id: pagePointer }
         Frost {
             id: linkLabel
@@ -774,7 +774,7 @@ Window {
             property bool onRight: false
             onNearChanged: if (near) onRight = !onRight
             // not `notice`: Main's full-screen notice has that id
-            readonly property string downloadText: root.hoveredLink === "" ? root.downloadNotice || root.foldedNotice : ""
+            readonly property string downloadText: root.hoveredLink === "" ? root.askNotice || root.downloadNotice || root.foldedNotice : ""
             visible: root.hoveredLink !== "" || downloadText !== ""
             x: onRight ? parent.width - width : 0
             y: parent.height - height
@@ -2557,10 +2557,15 @@ Window {
         case "inspect": inspectElement(v); break;
         }
     }
-    // a private window has no Always (PLAN.md 3.14)
-    function keepInAlways() {
-        if (sessionModel.current && !root.offTheRecord)
-            sessionModel.keepInAlways(sessionModel.currentPage);
+    // a private window has no Always (PLAN.md 3.14). A page that is a pin, or whose site has one, keeps that one and
+    // the card says so. `pageId`: the page on screen when not given.
+    function keepInAlways(pageId) {
+        const id = pageId ?? sessionModel.currentPage, p = sessionModel.pages[id];
+        if (!p || root.offTheRecord)
+            return;
+        if (sessionModel.always.indexOf(id) >= 0 || sessionModel.alwaysFor(p.url) !== undefined)
+            showNotice({ text: "Already pinned", action: "", where: "card" }, 4000);
+        sessionModel.keepInAlways(id);
     }
 
     // Pages gone from the lists every main window shares (Remove from Always, in any window): their views here go, and
@@ -2677,16 +2682,32 @@ Window {
     }
 
     // A new ask: the page being closed shows it, as the close waits on it; an unfocused window asks
-    // Hyprland for the urgent hint. Other background pages keep theirs behind ● on their row.
+    // Hyprland for the urgent hint. Other background pages keep theirs behind ● on their row, and folded, where no
+    // row shows, the docked label says so for 3 s.
     // In page full screen the ask waits behind a 4 s notice (PLAN.md 8m).
     function asked(pageId, a) {
         if (a.kind === "leave" && views[pageId]?.closing && pageId !== sessionModel.currentPage)
             show(pageId);
         if (root.pageFullScreen && pageId === sessionModel.currentPage)
             notice.show(PageState.askingNotice(a.host), 4000);
+        if (pageId !== sessionModel.currentPage) {
+            noticeAsk = { page: pageId, text: (a.host || sessionModel.pages[pageId]?.title || "A page") + " · " + Asks.word(a) };
+            askNoticeEnd.restart();
+        }
         if (!root.active)
             root.alert(0);
     }
+    // A background page's ask while the rail is folded, in the docked label as a download's notice is (the owner,
+    // 2026-11-13): its host and its row's word ("meet.google.com · mic?"), until it is answered or its page is shown
+    property var noticeAsk: null
+    readonly property string askNotice: {
+        sessionModel.revision;
+        const p = noticeAsk ? sessionModel.pages[noticeAsk.page] : null;
+        if (!p || !p.needsYou || noticeAsk.page === sessionModel.currentPage || railPinned || peek.out || pageFullScreen)
+            return "";
+        return noticeAsk.text;
+    }
+    Timer { id: askNoticeEnd; interval: 3000; onTriggered: root.noticeAsk = null }
 
     function fileThread(threadId) {
         const t = sessionModel.threadById(threadId), id = sessionModel.currentPage, v = root.currentView;
@@ -3825,7 +3846,7 @@ Window {
         case "moveTo": sessionModel.movePage(ref, arg, ""); break;
         case "split": sessionModel.splitPage(ref, sessionModel.openThreads()[0]?.id ?? ""); break;
         case "splitFrom": sessionModel.splitFrom(ref); break;
-        case "always": sessionModel.keepInAlways(ref); break;
+        case "always": keepInAlways(ref); break;
         case "close": closePage(ref); break;
         case "back": if (views[ref]) back(views[ref]); break;
         case "closeOthers": dropViews(sessionModel.closeOthers(ref)); afterClose(); break;
@@ -3863,7 +3884,7 @@ Window {
             else if (arg.kind === "new")
                 sessionModel.splitPage(ref, sessionModel.openThreads()[0]?.id ?? "");
             else if (arg.kind === "always")
-                sessionModel.keepInAlways(ref);
+                keepInAlways(ref);
             break;
         // a thread header dragged between threads
         case "dropThread": sessionModel.moveThread(ref, arg.kind === "new" ? sessionModel.openThreads()[0]?.id ?? "" : arg.before); break;

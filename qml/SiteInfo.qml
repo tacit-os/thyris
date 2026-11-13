@@ -22,7 +22,7 @@ QtObject {
     property string expand: ""              // the row whose choices are out
     property string waiting: ""             // Main: the host of an ask that waits until the panel closes
     // what the panel learns as it opens; shots set them
-    property var tls: null                  // Facts.lookUpTls's answer for the page's host
+    property var tls: null                  // the page's connection: its view's record of it, or Facts.lookUpTls's answer
     property var seen: ({ blocked: 0, insecureImages: false })
     property bool blocker: adblock !== null && adblock.ready
     // the profile's cookie list: the SiteData singleton's, a private window's own (PLAN.md 3.14)
@@ -143,8 +143,10 @@ QtObject {
         onTriggered: if (--info.left <= 0) info.finish()
     }
 
-    // The TLS and certificate the host presents to a handshake of the browser's own (the engine reports
-    // neither for a loaded page), asked as the panel opens on an https page.
+    // The TLS and certificate of the page's connection, asked as the panel opens on an https page: on CEF its view's
+    // record of the connection the page came over (PageItem.lookUpConnection), so the panel makes none of its own past
+    // the browser's proxy (the owner, 2026-11-13); Qt WebEngine reports neither for a loaded page, so that build asks
+    // a handshake of the browser's own with the host.
     property var asked: null
     function lookUp() {
         tls = null;
@@ -153,7 +155,19 @@ QtObject {
         if (!live || !open || !m)
             return;
         asked = { host: m[1].replace(/^\[|\]$/g, ""), port: Number(m[2] || 443) };
-        Facts.lookUpTls(asked.host, asked.port);
+        if (typeof view.lookUpConnection === "function")
+            view.lookUpConnection();
+        else
+            Facts.lookUpTls(asked.host, asked.port);
+    }
+    property Connections recorded: Connections {
+        target: info.view
+        ignoreUnknownSignals: true
+        function onConnectionFound(der, protocol) {
+            const c = info.asked ? Facts.connection(der, protocol) : {};
+            if (info.asked)
+                info.tls = Object.keys(c).length > 0 ? c : null;
+        }
     }
     property Connections answers: Connections {
         target: Facts

@@ -482,7 +482,8 @@ QtObject {
           expect: () => !view.loading, page: "document.title", pageExpect: v => v === "long" },
         { name: "a scheme-less address in the new-page bar", wait: 200,
           act: () => { check.starts = []; newPageBar.show("plain.test:" + check.port + "/plain") }, expect: () => newPageBar.opened },
-        { name: "its new page falls back the same way, with nothing to go back to", key: Qt.Key_Return, wait: 1000,
+        // a new page's view is made first, so this takes longer than the address card's step above (done between 1 and 1.5 s)
+        { name: "its new page falls back the same way, with nothing to go back to", key: Qt.Key_Return, wait: 3000,
           expect: () => String(view.url) === check.served("plain", "/plain") && !view.loading && !view.canGoBack
               && check.starts.length === 2 && view.drawn },
         { name: "a new page whose server does not answer: its view stays under the terminal ground", wait: 500,
@@ -659,6 +660,19 @@ QtObject {
         { name: "Esc: the card goes back into the handle and the ask's sheet comes out", key: Qt.Key_Escape, wait: 1000,
           expect: () => !address.out && check.sheetOut() && !hoverPeek.out },
         { name: "(the stand-in ask goes, and its sheet slides back)", wait: 900, act: () => view.asks = [], expect: () => check.sheetIn() },
+        // folded, no row is out to show a page behind asking: the docked label says so for 3 s, as for a download
+        { name: "(another page on screen)", wait: 900, act: () => app.show(session.threads.find(t => t.pages.indexOf(check.asker) < 0).pages[0]),
+          expect: () => session.currentPage !== check.asker && !app.railPinned && !hoverPeek.out },
+        { name: "folded, the page behind asks for the camera: the docked label says its host and its row's word", wait: 900,
+          act: () => app.views[check.asker].runJavaScript("navigator.mediaDevices.getUserMedia({ video: true }).then(() => log.push('cam ok'), e => log.push('cam ' + e.name))"),
+          expect: () => session.pages[check.asker].needsYou && session.pages[check.asker].asking === "camera?" && !view.ask
+              && app.askNotice === "localhost:" + check.port + " · camera?" && !hoverPeek.out },
+        { name: "the label goes after 3 s; the ask still waits behind its row", wait: 2600,
+          expect: () => app.askNotice === "" && session.pages[check.asker].needsYou },
+        { name: "(back on that page; F6, Esc: denied)", wait: 900,
+          act: () => { app.show(check.asker); check.later(() => { probe.press(Qt.Key_F6, 0); probe.press(Qt.Key_Escape, 0) }) },
+          expect: () => session.currentPage === check.asker && !view.ask && !session.pages[check.asker].needsYou,
+          page: "log.join()", pageExpect: v => /cam (NotAllowed|Abort)Error$/.test(v) },
         { name: "Ctrl+B pins again", focus: "document.activeElement.blur()", key: Qt.Key_B, mods: ctrl, wait: 1200, expect: () => app.railPinned },
         // Loads that replace no document keep the page load's asks and answers: a link from an Always page to
         // another site (refused there; it opens a thread of one) and a file link (a download).
@@ -1233,8 +1247,17 @@ QtObject {
           expect: () => !!rail.rowAction("d:" + check.dl, "show") && /^300 kB · \d\d:\d\d$/.test(check.rowOf("d:" + check.dl).info) },
         { name: "Show in Files hands the file to Files (a dry run)", wait: 300, act: () => check.clickAction("d:" + check.dl, "show"),
           expect: () => Apps.lastRevealed === check.record().path },
-        { name: "a click on it opens it in its app (a dry run); the row stays for now", wait: 300, act: () => check.clickRow("d:" + check.dl),
-          expect: () => Apps.lastOpened === check.record().path && check.record().opened > 0 && !!check.rowOf("d:" + check.dl) },
+        // Open looks the app up first, as xdg-open would (Apps.lookUpFile): its type here is text/plain, which nothing opens yet
+        { name: "a click on it with no app for its type opens nothing: its row says No app opens .mbox files, and it is not counted as opened", wait: 3000,
+          act: () => check.clickRow("d:" + check.dl),
+          expect: () => { const r = check.rowOf("d:" + check.dl); probe.report("     " + (r ? r.note : "no row"));
+              return Apps.lastOpened === "" && !check.record().opened && check.record().unopened === "no app" && !!r && r.note === "No app opens .mbox files" } },
+        // a finished file stays under its page Downloads.keepLanded (8 s), which the lookups above used up
+        { name: "(an app for text/plain; the file's moment under its page begun again)", wait: 100,
+          act: () => { probe.fakeApp("text/plain", "Check Text"); session.updateDownload(check.dl, { finished: Date.now() }) }, expect: () => !!check.rowOf("d:" + check.dl) },
+        { name: "a click on it opens it in its app (a dry run); the row stays for now, its words gone", wait: 3000, act: () => check.clickRow("d:" + check.dl),
+          expect: () => Apps.lastOpened === check.record().path && check.record().opened > 0 && !!check.rowOf("d:" + check.dl)
+              && check.rowOf("d:" + check.dl).note === "" },
         { name: "10 min after it was opened the row has left; the record stays for Downloads", wait: 300,
           act: () => session.updateDownload(check.dl, { opened: Date.now() - 600001 }), expect: () => !check.rowOf("d:" + check.dl) && !!check.record() },
         { name: "three more from the page: one row, 3 downloads with the percent of them all", wait: 800,
@@ -1395,7 +1418,7 @@ QtObject {
                   && n.actions.join("|") === "open|Open|show|Show in Files" && !n.resident && !n.transient } },
         { name: "its Show in Files hands the file to Files (a dry run)", wait: 300, act: () => Apps.noticeAction(check.dl, "show"),
           expect: () => Apps.lastRevealed === check.record().path },
-        { name: "its Open opens it in its app (a dry run)", wait: 300, act: () => Apps.noticeAction(check.dl, "open"),
+        { name: "its Open opens it in its app (a dry run)", wait: 3000, act: () => Apps.noticeAction(check.dl, "open"),
           expect: () => Apps.lastOpened === check.record().path && check.record().opened > 0 },
         { name: "folded, a file that fails: its notification says why, with Try again, and stays until it is dealt with", wait: 2000,
           act: () => probe.allowResume(false), focus: "location.href = '/file/notice-cut.bin?size=100000&delay=5&cut=20000'",
@@ -1479,8 +1502,16 @@ QtObject {
           expect: () => view.title === "asks" },
         { name: "(a click asks)", wait: 800, focus: "act = mic", act: () => check.click(),
           expect: () => !view.ask, page: "log.join()", pageExpect: v => /^mic (NotAllowed|Abort)Error$/.test(v) },
-        { name: "(back to Ask, and a reload: the engine keeps a refusal for the page load)", wait: 1500,
-          act: () => { site.set("microphone", ""); view.reload() }, expect: () => view.title === "asks" && !view.loading && site.choice("microphone") === "" },
+        { name: "the Block's mark at the card's right, mic_off, opens the panel at the microphone's row", wait: 600,
+          act: () => check.later(() => check.clickNamed(rail.addressField, "blockedGlyph")),
+          expect: () => view.blockedUse.join() === "microphone" && (check.named(rail.addressField, "blockedGlyph") || {}).text === "mic_off"
+              && site.open && site.expand === "microphone" && !!rail.sitePanel.target("site:microphone=allow") },
+        { name: "(Esc folds the row's choices; Esc again closes the panel)", wait: 500,
+          act: () => { probe.press(Qt.Key_Escape, 0); probe.press(Qt.Key_Escape, 0) }, expect: () => !site.open },
+        { name: "(back to Ask, and a reload: the engine keeps a refusal for the page load; the mark goes with that load)", wait: 1500,
+          act: () => { site.set("microphone", ""); view.reload() },
+          expect: () => view.title === "asks" && !view.loading && site.choice("microphone") === "" && view.blockedUse.length === 0
+              && check.named(rail.addressField, "blockedGlyph") === null },
         { name: "a click asks again", wait: 800, focus: "act = mic", act: () => check.click(),
           expect: () => view.ask && view.ask.types.join() === "microphone" && !!check.section().model },
         { name: "Site settings in the ask's sheet opens the panel at its row, the ask still in its sheet", wait: 600,
@@ -1565,6 +1596,13 @@ QtObject {
           expect: () => view.title === "plain" && !view.audioMuted && !session.current.muted },
         { name: "back on the site it is muted again", wait: 1500, act: () => view.goBack(), expect: () => view.title === "site other" && view.audioMuted },
         { name: "(Sound back to Ask)", wait: 300, act: () => site.set("sound", ""), expect: () => !view.audioMuted && !app.views[check.other].audioMuted },
+        // the site's mute lifted leaves nothing behind (siteMuted): a mute of yours after it stays on a page of another site
+        { name: "(your own mute there, Ctrl+M)", focus: "document.activeElement.blur()", key: Qt.Key_M, mods: ctrl, wait: 500,
+          expect: () => view.audioMuted && !view.siteMuted },
+        { name: "a mute of yours made after the site's was lifted stays on a page of another site", wait: 1500,
+          act: () => app.go("http://localhost:" + check.port + "/plain", "navigate"),
+          expect: () => view.title === "plain" && view.audioMuted && !view.siteMuted && session.current.muted },
+        { name: "(Ctrl+M: unmuted)", focus: "document.activeElement.blur()", key: Qt.Key_M, mods: ctrl, wait: 500, expect: () => !view.audioMuted },
         // Pop-ups without a click: refused, and the glyph at the card's right opens the panel at its row
         { name: "(the site's page)", wait: 1500, act: () => { probe.press(Qt.Key_Escape, 0); app.go(check.local("/site"), "navigate") },
           expect: () => view.title === "site" && !site.open },
@@ -1596,15 +1634,16 @@ QtObject {
           act: () => check.clickSite("site:clear"),
           expect: () => !site.clearing && view.visible && view.title === "site" && !view.loading && site.open && check.siteKinds()[0] === "head",
           page: "window.report", pageExpect: v => v === '[null,"","",""]' },
-        // A certificate the page was let past: the handshake reads what the engine questioned
+        // A certificate the page was let past: the panel reads the connection the page came over, as the engine recorded it
         { name: "(a page past its certificate: the certificate's page, then Continue)", wait: 1500,
           act: () => { if (!check.tlsPort) check.tlsPort = probe.serveTls(); probe.press(Qt.Key_Escape, 0); app.go("https://cert.test:" + check.tlsPort + "/plain", "navigate") },
           expect: () => view.failure && view.failure.kind === "certificate" },
         { name: "(Continue)", wait: 1500, act: () => app.failureAction(view, "continue"), expect: () => !view.failure && view.questioned !== null },
-        { name: "the panel says so in the error tone, with the TLS its own handshake read", focus: "document.activeElement.blur()",
-          key: Qt.Key_I, mods: ctrl, wait: 1500,
-          expect: () => site.security.text === "Unknown certificate authority" && site.security.tone === "error" && site.security.certificate
-              && site.tls.protocol === "TLS 1.3" && site.tls.subject === "cert.test" },
+        { name: "the panel says so in the error tone, with the TLS of the page's own connection as the engine recorded it (no cipher: no handshake of its own)",
+          focus: "document.activeElement.blur()", key: Qt.Key_I, mods: ctrl, wait: 1500,
+          expect: () => { probe.report("     " + JSON.stringify(site.tls ? { protocol: site.tls.protocol, subject: site.tls.subject, cipher: site.tls.cipher } : null));
+              return site.security.text === "Unknown certificate authority" && site.security.tone === "error" && site.security.certificate
+                  && site.tls.protocol === "TLS 1.3" && site.tls.subject === "cert.test" && site.tls.cipher === undefined } },
         { name: "› shows the certificate the engine questioned (its SHA-256), and Copy PEM copies it", wait: 600,
           act: () => { check.copied = ""; check.clickSite("site:certificate"); check.later(() => check.clickSite("site:pem")) },
           expect: () => site.sub === "certificate" && view.questioned.details[1].endsWith("SHA-256 " + site.tls.sha256)
@@ -2719,8 +2758,15 @@ QtObject {
           act: () => { check.recallFile = session.addDownload({ file: "recall-notes.txt", path: Disk.downloads + "/recall-notes.txt", state: "done",
                                                                  started: Date.now() + 60000, finished: Date.now() }) },
           expect: () => app.earlier.view === "downloads" && rail.rows.filter(r => r.type === "download").length === session.downloads.length },
-        { name: "Down, Enter: the newest file, first in the list, opens (a dry run)", wait: 800,
+        { name: "Down, Enter: the newest file, first in the list, is not there: its row says The file is gone, nothing opens", wait: 3000,
           act: () => { probe.press(Qt.Key_Down, 0); probe.press(Qt.Key_Return, 0) },
+          expect: () => { const r = check.rowOf("d:" + check.recallFile);
+              return rail.listFocused && Apps.lastOpened !== Disk.downloads + "/recall-notes.txt" && !session.downloadById(check.recallFile).opened
+                  && !!r && r.note === "The file is gone" } },
+        { name: "(the file there, an app for text/plain)", wait: 100,
+          act: () => { probe.fixtureFile("Downloads/recall-notes.txt", "notes\n"); probe.fakeApp("text/plain", "Check Text") },
+          expect: () => Facts.isFile(Disk.downloads + "/recall-notes.txt") },
+        { name: "Enter again: it opens (a dry run)", wait: 3000, act: () => probe.press(Qt.Key_Return, 0),
           expect: () => rail.listFocused && Apps.lastOpened === Disk.downloads + "/recall-notes.txt" && session.downloadById(check.recallFile).opened > 0 },
         { name: "Ctrl+Shift+O: Saved", key: Qt.Key_O, mods: ctrl | Qt.ShiftModifier, wait: 800, expect: () => app.earlier.view === "saved" },
         { name: "Esc: the rail's own list", key: Qt.Key_Escape, wait: 800, expect: () => app.earlier.view === "" },
@@ -5392,7 +5438,9 @@ QtObject {
           expect: () => { const s = rail.tabMenu.sub, right = s.contentItem.mapToItem(null, s.contentItem.width, 0).x;
               probe.report("     " + s.width + " px wide, right edge at " + right);
               return s.opened && s.entries.some(e => e.arg === session.pages[check.railLong].thread) && s.width <= 480 && right <= app.width } },
-        { name: "(Esc, Esc; that task closed)", wait: 600, act: () => { probe.press(Qt.Key_Escape, 0); probe.press(Qt.Key_Escape, 0); app.closePage(check.railLong) },
+        // the second Esc once the submenu has gone: sent at once, it reached the submenu still fading out and the menu stayed
+        { name: "(Esc, Esc; that task closed)", wait: 800,
+          act: () => { probe.press(Qt.Key_Escape, 0); check.later(() => { probe.press(Qt.Key_Escape, 0); app.closePage(check.railLong) }) },
           expect: () => !rail.tabMenu.opened && !session.pages[check.railLong] },
         // unloaded pages, so nothing is fetched from those sites
         { name: "a task still named as its first page is called by its site: Bbc for www.bbc.co.uk (not Co), 192.168.1.5:8080 whole", wait: 600,
@@ -5406,6 +5454,25 @@ QtObject {
               return names.join() === "Bbc,192.168.1.5:8080" } },
         { name: "(those tasks closed)", wait: 600, act: () => check.railNamed.forEach(t => session.threadById(t).pages.slice().forEach(id => app.closePage(id))),
           expect: () => check.railNamed.every(t => check.rowIndex("t:" + t) < 0) },
+        // Pin on a page of a task of several: a cell of its own at that page's address (the owner, 2026-11-13)
+        { name: "(a task of two pages on localhost, the second on screen)", wait: 1500,
+          act: () => { const t = session.newThread("pin task"), a = session.addPage(t, "http://localhost:" + check.port + "/plain", "");
+                       check.pinTask = [a, session.addPage(t, "http://localhost:" + check.port + "/find", a)]; app.show(check.pinTask[1]) },
+          expect: () => session.currentPage === check.pinTask[1] && String(view.url) === "http://localhost:" + check.port + "/find" && !view.loading },
+        { name: "Ctrl+Shift+D pins that page's own address, titled as it; the task keeps both pages; nothing said", key: Qt.Key_D, mods: ctrl | Qt.ShiftModifier,
+          wait: 800, focus: "document.activeElement.blur()",
+          expect: () => { const cell = session.alwaysFor("http://localhost:" + check.port + "/"), c = cell ? session.pages[cell] : {};
+              probe.report("     " + c.url + " | " + c.title);
+              return !!cell && c.url === "http://localhost:" + check.port + "/find" && c.home === c.url && c.title === session.pages[check.pinTask[1]].title
+                  && session.pages[check.pinTask[1]].thread !== "" && session.threadById(session.pages[check.pinTask[1]].thread).pages.length === 2
+                  && app.cardNotice === null } },
+        { name: "Pin again, from the menu of the task's other page: the card says Already pinned, and there is still one cell for the site", wait: 600,
+          act: () => app.command("always", check.pinTask[0], null),
+          expect: () => !!app.cardNotice && app.cardNotice.text === "Already pinned" && check.drawn(rail.addressField).indexOf("Already pinned") >= 0
+              && session.always.filter(id => session.siteOf(session.pages[id].url) === "localhost:" + check.port).length === 1 },
+        { name: "(that pin removed, the task closed)", wait: 800,
+          act: () => { app.command("removeAlways", session.alwaysFor("http://localhost:" + check.port + "/"), null); check.pinTask.forEach(id => app.closePage(id)) },
+          expect: () => session.alwaysFor("http://localhost:" + check.port + "/") === undefined && !check.pinTask.some(id => session.pages[id]) },
         { name: "(the cell removed, the three threads closed)", wait: 1500,
           act: () => { app.command("removeAlways", check.railCell, null); for (const id of [check.railSolo].concat(check.railAway, check.railTask)) app.closePage(id) },
           expect: () => session.always.indexOf(check.railCell) < 0 && ![check.railSolo].concat(check.railAway, check.railTask).some(id => session.pages[id]) },
@@ -5420,6 +5487,7 @@ QtObject {
     property var railNamed: []
     property string railLong: ""
     property var portPins: []
+    property var pinTask: []
     function rowIndex(key) {
         const m = rail.listView.model;
         for (let i = 0; i < m.count; i++)

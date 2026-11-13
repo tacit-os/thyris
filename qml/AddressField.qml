@@ -175,8 +175,8 @@ Item {
             }
             // at the card's right: the site's zoom when not 100 % (12 px), the bell of a notification ask made
             // without a click (it brings the ask out), what an allowed permission keeps using this page load,
-            // and popups refused this page load for want of a click (PLAN.md 8k; it opens the site panel's
-            // Pop-ups row)
+            // popups refused this page load for want of a click (PLAN.md 8k; it opens the site panel's
+            // Pop-ups row), and the camera or microphone the site's lasting Block refused this page load (its row)
             IconButton {
                 id: reloadButton
                 objectName: "reloadButton"
@@ -203,6 +203,18 @@ Item {
                     color: popupArea.containsMouse ? Theme.colOnLayer0 : Theme.colSubtext
                     Behavior on color { CAnim { hover: true } }
                     MouseArea { id: popupArea; anchors.fill: parent; enabled: parent.visible; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: field.siteClicked("popups") }
+                }
+                Symbol {
+                    objectName: "blockedGlyph"
+                    readonly property string type: field.view === null || field.view.blockedUse.length === 0 ? ""
+                                                   : field.view.blockedUse.indexOf("camera") >= 0 ? "camera" : "microphone"
+                    visible: type !== ""
+                    width: 20; height: 20
+                    text: type === "camera" ? "videocam_off" : "mic_off"
+                    iconSize: 16
+                    color: blockedArea.containsMouse ? Theme.colOnLayer0 : Theme.colSubtext
+                    Behavior on color { CAnim { hover: true } }
+                    MouseArea { id: blockedArea; anchors.fill: parent; enabled: parent.visible; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: field.siteClicked(parent.type) }
                 }
                 Symbol {
                     objectName: "bellGlyph"

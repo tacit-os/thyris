@@ -127,6 +127,10 @@ public:
     Q_PROPERTY(QString lastWebAuthnAnswer READ lastWebAuthnAnswer)
     QString lastWebAuthnAnswer() const { return m_lastWebAuthnAnswer; }
     Q_INVOKABLE void devtoolsCall(const QString &method, const QVariantMap &params = {});
+    // The connection the page on screen came over, as the engine recorded it in its navigation entry (CefSSLStatus):
+    // answers with connectionFound, the leaf certificate in DER and the TLS version ("TLS 1.3"), both empty for a page
+    // that did not come over TLS. The engine keeps no cipher. The site panel reads this rather than connect itself.
+    Q_INVOKABLE void lookUpConnection();
     // This view as spare DevTools: their front end loads now on a relay with no page, and a page given this view as its
     // devToolsView takes them as they are, loaded (DevToolsBridge's spare)
     Q_INVOKABLE void prepareDevTools();
@@ -265,6 +269,7 @@ signals:
     void renderProcessPidChanged();
     void unresponsiveChanged();
     void audioMutedChanged();
+    void connectionFound(const QByteArray &der, const QString &protocol);
     void mediaAccessChanged();
     void lifecycleStateChanged();
     void devToolsViewChanged();

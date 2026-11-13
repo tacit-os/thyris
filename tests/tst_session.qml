@@ -531,13 +531,19 @@ TestCase {
 
     function test_keepInAlwaysLeavesAThreadsPageInPlace() {
         const [s, t, ids] = withThread("t", ["one", "two"]);
-        s.update(ids[0], { url: "https://docs.qt.io/qt-6/qml.html", icon: "i" });
+        s.update(ids[0], { url: "https://docs.qt.io/qt-6/qml.html", title: "QML Applications", icon: "i" });
         const cell = s.keepInAlways(ids[0]);
         verify(cell !== ids[0]);
-        compare(s.pages[cell].url, "https://docs.qt.io/");
-        compare(s.pages[cell].title, "docs.qt.io");
+        compare(s.pages[cell].url, "https://docs.qt.io/qt-6/qml.html", "the page's own address, not the site's start");
+        compare(s.pages[cell].home, "https://docs.qt.io/qt-6/qml.html", "and it starts there again");
+        compare(s.pages[cell].title, "QML Applications");
+        compare(s.pages[cell].icon, "i");
         compare(s.threadById(t).pages, ids, "the thread keeps its page");
-        compare(s.keepInAlways(ids[0]), cell, "one cell per site");
+        compare(s.alwaysFor("https://docs.qt.io/qt-5/"), cell);
+        s.update(ids[1], { url: "https://docs.qt.io/qt-6/qtquick-index.html" });
+        compare(s.keepInAlways(ids[1]), cell, "one cell per site");
+        compare(s.always, [cell]);
+        compare(s.alwaysFor("https://qt.io/"), undefined);
     }
 
     function test_removeAndMoveAlways() {

@@ -570,8 +570,8 @@ Loading:
 - The ask lives in the address card under the host that asks, outside the page, so a page cannot fake it. Things the browser tells you push the rail rows down (150 ms) so nothing is hidden; things you call up (suggestions, find, site panel) lie over them. The page never moves.
 - Buttons 32 px, radius 12, wash 5 % rest / 8 % hover, hairline 30 %, 14 px labels. Neither is filled, coloured or the default. The ask never takes focus: F6 reaches it, Tab moves between the buttons, Enter picks, Esc means Deny for this page load.
 - Allow once lasts until you leave or reload the page. Lasting choices live in the site panel ("Site settings"). Several asks queue in one card ("1 of 2"); combined asks read as one sentence.
-- Notification asks made without a click from you get only a quiet bell glyph at the card's right. While the mic, camera, location or screen share is in use, its glyph sits at the card's right and on the page's row.
-- An ask from a background page puts ● on its row and thread and waits there until you open that page. With the rail folded it waits the same way, and the page's ask on screen brings the overlay out (3.5 5d). If the window is unfocused, Hyprland's urgent hint is set.
+- Notification asks made without a click from you get only a quiet bell glyph at the card's right. While the mic, camera, location or screen share is in use, its glyph sits at the card's right and on the page's row. A camera or microphone the site's lasting Block refused this page load gets its crossed-out glyph at the card's right, which opens the site panel at its row; nothing pops up.
+- An ask from a background page puts ● on its row and thread and waits there until you open that page. With the rail folded it waits the same way, and the docked label (5a) says so for 3 s, its host and its row's word ("meet.google.com · mic?"); the page's ask on screen brings the overlay out (3.5 5d). If the window is unfocused, Hyprland's urgent hint is set.
 
 Downloads:
 
@@ -597,7 +597,7 @@ Downloads:
 ```
 
 - Files go to ~/Downloads without a dialog. Ctrl+S and "Ask where to save" (Settings) use the shell's Files window in save mode, never a GTK or KDE dialog. The origin (thread and page) is written as an xattr on the file, so Files can show it later.
-- The file row (15 px name, 13 px tabular detail, 2 px progress) grows in under its page (150 ms). Pause and Cancel show on hover while running, and Open and Show in Files on hover when finished. A failure reads "Failed: <reason>" in the error tone, with Retry and Remove. Several downloads from one page collapse into "3 downloads · 40 %", and a click lists them in place.
+- The file row (15 px name, 13 px tabular detail, 2 px progress) grows in under its page (150 ms). Pause and Cancel show on hover while running, and Open and Show in Files on hover when finished. Open first looks for the file and for the app that opens its type, as xdg-open would; with none, the row says "The file is gone" or "No app opens .zip files" and the file does not count as opened. A failure reads "Failed: <reason>" in the error tone, with Retry and Remove. Several downloads from one page collapse into "3 downloads · 40 %", and a click lists them in place.
 - Downloads whose page has no row (an Always site, a closed page) sit in a "Downloads" group above Earlier while running or unopened. The rows leave 10 min after you open the file or when the thread is filed; every file stays in Earlier > Downloads (Ctrl+J).
 - Qt WebEngine has no Safe Browsing verdict, so the browser only marks types that run as programs (.AppImage, .run, .sh, .desktop): "Runs as a program. Keep · Delete". Chromium blocks http downloads from https pages; the row reads "Blocked: insecure download · Keep".
 
@@ -1568,7 +1568,7 @@ Editing keys inside page fields are never taken. Ctrl+K and Ctrl+E belong to sit
 | Lock, "Not secure", certificate | The card's favicon slot (http only). Certificate view in the site panel. Error pages 8g |
 | Site info, cookies, site data | Site panel (favicon, Ctrl+I). Later the island's wings open it |
 | Permission prompts | Allow once / Deny in the address card; lasting choices in the site panel |
-| Pop-ups blocked, notification asks | A quiet glyph at the card's right that opens the site panel row |
+| Pop-ups blocked, a camera or microphone Blocked, notification asks | A quiet glyph at the card's right that opens the site panel row |
 | Sign-in and payment popups | In the notch; where it cannot take one, a page after its opener (8k) |
 | alert / confirm / prompt | Page-voice dialog at the top of the page area, named in the card (8j) |
 | "Leave site?" | Ask in the address card (8j) |

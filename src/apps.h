@@ -33,6 +33,9 @@ public:
 
     // Answers with found(); the name is the desktop file's Name, "" when no app takes the scheme.
     Q_INVOKABLE void lookUp(const QString &scheme);
+    // What Open on a downloaded file would find, before it opens it (PLAN.md 8d): answers with fileFound(), `exists` false
+    // for a file that is not there, `name` the default app for its type as xdg-open looks it up, "" for none.
+    Q_INVOKABLE void lookUpFile(const QString &path);
     Q_INVOKABLE void open(const QString &url);
     // The shell's Files window at the file's folder with the file selected (`files reveal` over Quickshell
     // IPC); without the shell, the folder in the default file manager.
@@ -58,6 +61,7 @@ public:
 
 signals:
     void found(const QString &scheme, const QString &name);
+    void fileFound(const QString &path, bool exists, const QString &name);
     void opened();
     void revealed();
     void defaultFound();

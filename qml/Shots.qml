@@ -408,6 +408,8 @@ QtObject {
         },
         // a popup refused for want of a click: the glyph at the card's right
         "popup-blocked": () => { everyday(); app.currentView.blockedPopups = 1; },
+        // the camera refused by the site's lasting Block: its mark at the card's right
+        "camera-blocked": () => { everyday(); app.currentView.blockedUse = ["camera"]; },
         // 8l: a file input's pick is open in Files
         "file-pick": () => { everyday(); app.currentView.choosing = { mode: "multiple" }; },
         // 8m: YouTube's player in page full screen, just entered; then Meet in full screen when it asks

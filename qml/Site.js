@@ -53,8 +53,8 @@ function permissionTypes(entry, all, also) {
 }
 
 // The line under the host: { text, tone ("error" or ""), certificate (› opens the certificate view) }.
-// `questioned`: the card line of a certificate the page was let past (PLAN.md 8g); `tls`: the panel's own
-// handshake with the host (Facts.lookUpTls), null until it answers. Only the handshake shows a certificate.
+// `questioned`: the card line of a certificate the page was let past (PLAN.md 8g); `tls`: the page's connection
+// (SiteInfo.lookUp), null until it answers. Only that shows a certificate.
 function security(url, questioned, tls) {
     const certificate = !!tls && !!tls.sha256;
     if (questioned)
@@ -66,8 +66,9 @@ function security(url, questioned, tls) {
     return { text: "On this computer", tone: "", certificate: false };
 }
 
-// The certificate view's rows for the handshake's answer. Qt reports the cipher of a TLS 1.3 session but
-// not its key exchange group, so the TLS line names the cipher.
+// The certificate view's rows for the connection. Qt reports the cipher of a TLS 1.3 session but not its key
+// exchange group, so the TLS line names the cipher; CEF's record of the page's connection keeps neither, so there it
+// names the version alone.
 function certificateRows(c) {
     const out = [];
     if (c.subject)

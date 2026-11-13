@@ -847,7 +847,7 @@ WebEngineView {
         const keepsLogin = navigationType === T.FormSubmittedNavigation || navigationType === T.OtherNavigation;
         const kept = a => a.kind === "leave" || a.kind === "password" && keepsLogin || a.kind === "extension" && a.state === "added" || a.kind === "quit";
         keptLoad = { thisLoad: thisLoad, asks: asks.filter(a => !kept(a)), pendingApps: pendingApps, pickedFiles: pickedFiles,
-                     dialogs: dialogs, dialogsBlocked: dialogsBlocked, blockedPopups: blockedPopups, answered: reset ? [] : answered,
+                     dialogs: dialogs, dialogsBlocked: dialogsBlocked, blockedPopups: blockedPopups, blockedUse: blockedUse, answered: reset ? [] : answered,
                      reader: reader, article: article, articleAt: articleAt, editedKept: editedKept };
         // a new document has no article found yet, and shows its own body
         reader = false;
@@ -866,6 +866,7 @@ WebEngineView {
         dialogs = 0;
         dialogsBlocked = false;
         blockedPopups = 0;
+        blockedUse = [];
         dropPick();
         pickedFiles = {};
     }
@@ -882,6 +883,7 @@ WebEngineView {
         dialogs = k.dialogs;
         dialogsBlocked = k.dialogsBlocked;
         blockedPopups = k.blockedPopups;
+        blockedUse = k.blockedUse;
         reader = k.reader;
         article = k.article;
         articleAt = k.articleAt;
@@ -1194,8 +1196,13 @@ WebEngineView {
             return;
         }
         sites.noteAsked(origin, types);
-        const p = Asks.preset(types, t => thisLoad[origin + " " + t] ?? sites.choice(origin, t));
+        const decided = t => thisLoad[origin + " " + t] ?? sites.choice(origin, t);
+        const p = Asks.preset(types, decided);
         if (p !== "") {
+            // a camera or microphone the site's lasting Block refused gets a mark at the card's right
+            const blocked = types.filter(t => (t === "camera" || t === "microphone") && decided(t) === "block" && blockedUse.indexOf(t) < 0);
+            if (blocked.length > 0)
+                blockedUse = blockedUse.concat(blocked);
             settle(permission, p);
             if (p === "allow")
                 use(types);
@@ -1343,6 +1350,8 @@ WebEngineView {
     // page load because they came without a click from you.
     property var popup: null
     property int blockedPopups: 0
+    // the camera and microphone the site's lasting Block refused this page load ("camera", "microphone")
+    property var blockedUse: []
     // Main.retire: the view that opened this one's page with openIn, how many views this one opened that
     // way are still open, whether it is closed and kept only for them, and what goes with it (the popup
     // window it sits in; null for itself).

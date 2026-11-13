@@ -225,6 +225,34 @@ TestCase {
         compare(Facts.asked.length, 1, "no handshake for plain http");
     }
 
+    // on CEF the view's own record of the page's connection (PageItem.lookUpConnection): no handshake of the browser's own
+    Component {
+        id: cefViewComponent
+        QtObject {
+            property url url
+            property var questioned: null
+            property int lookedUp: 0
+            signal connectionFound(var der, string protocol)
+            function lookUpConnection() { lookedUp++ }
+        }
+    }
+    function test_onCefThePagesOwnConnectionAndNoHandshake() {
+        const sites = createTemporaryObject(sitesComponent, this);
+        const view = createTemporaryObject(cefViewComponent, this, { url: "https://cert.test:4433/plain" });
+        const i = createTemporaryObject(infoComponent, this, { sites: sites, view: view });
+        i.show("rail", "");
+        compare(view.lookedUp, 1);
+        compare(Facts.asked, [], "no connection of the browser's own");
+        compare(i.tls, null);
+        view.connectionFound("ab:cd", "TLS 1.3");
+        compare(i.security.text, "Secure · TLS 1.3");
+        verify(i.security.certificate);
+        const rows = Site.certificateRows(i.tls);
+        compare(rows.find(r => r.key === "tls").label, "TLS 1.3", "the version alone: the engine keeps no cipher");
+        view.connectionFound("", "");
+        compare(i.tls, null, "a page that did not come over TLS shows none");
+    }
+
     function test_clearWaitsOnItsUndo() {
         const t = info("https://www.youtube.com/watch");
         SiteData.counts = { "www.youtube.com": 14 };

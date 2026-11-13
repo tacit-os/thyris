@@ -501,9 +501,13 @@ QtObject {
         return ((/^[a-z][a-z0-9+.-]*:\/\/(?:[^\/?#@]*@)?(?:www\.)?([^\/?#]+)/i.exec(url || "") ?? [])[1] ?? "").toLowerCase();
     }
 
+    // the site's Always cell, or undefined
+    function alwaysFor(url) {
+        return always.find(id => siteOf(pages[id].url) === siteOf(url));
+    }
     // One Always cell per site: an existing cell for the same site is returned instead.
     function addAlways(url, title, icon) {
-        const have = always.find(id => siteOf(pages[id].url) === siteOf(url));
+        const have = alwaysFor(url);
         if (have)
             return have;
         const p = { id: uid(), thread: "", url: url, home: url, homing: true, title: title ?? "", icon: icon ?? "", lastActive: Date.now(),
@@ -516,18 +520,16 @@ QtObject {
     }
 
     // Keep in Always (drag to the foot, row menu, Ctrl+Shift+D). A thread of one acts like a tab, so the
-    // page itself moves into the cell; a page of a larger thread stays with its task and its site gets a
-    // cell of its own. Returns the cell's page id.
+    // page itself moves into the cell; a page of a larger thread stays with its task and a cell of its own
+    // starts at its address. A site's cell already there is kept. Returns the cell's page id.
     function keepInAlways(pageId) {
         const p = pages[pageId];
         if (!p || !p.thread)
             return pageId;
         const t = threadById(p.thread);
-        const have = always.find(id => siteOf(pages[id].url) === siteOf(p.url));
-        if (have || t.pages.length > 1) {
-            const origin = /^[a-z]+:\/\/[^\/?#]+/i.exec(p.url);
-            return have ?? (origin ? addAlways(origin[0] + "/", siteOf(p.url), p.icon) : "");
-        }
+        const have = alwaysFor(p.url);
+        if (have || t.pages.length > 1)
+            return have ?? (/^[a-z]+:\/\/[^\/?#]+/i.test(p.url) ? addAlways(p.url, p.title, p.icon) : "");
         detach(pageId);
         p.thread = "";
         p.home = p.url;
