@@ -43,6 +43,15 @@ TestCase {
         compare(Lifecycle.pick([page("frozen", 90, { state: "frozen" })]).id, "frozen", "a frozen page still holds memory");
     }
 
+    // CEF never sets `audible`: a page the net's ask found playing (Main.unloadPage) counts as audible for a minute
+    function test_aPageHeardPlayingStaysAMinute() {
+        const now = 100 * min;
+        compare(Lifecycle.heard(0, now), false, "never asked, or never heard");
+        compare(Lifecycle.heard(now - 59 * 1000, now), true);
+        compare(Lifecycle.heard(now - min, now), false, "then it is asked again");
+        compare(Lifecycle.pick([page("playing", 90, { audible: Lifecycle.heard(now - 1000, now) }), page("idle", 5)]).id, "idle");
+    }
+
     function test_whatKeepsAPageLive() {
         compare(Lifecycle.keeps(page("p", 60, { audible: true }), false, false), "audio");
         compare(Lifecycle.keeps(page("p", 60, { downloading: true }), false, false), "download");

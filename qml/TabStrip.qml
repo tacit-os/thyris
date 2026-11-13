@@ -334,13 +334,14 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-                // a held tab moves after 8 px; the row does not take it to scroll
+                // a held tab moves after 8 px; the row does not take it to scroll. A pin's face and its away tab do not
+                // move, as in the rail: a pin dropped among the tabs would join a task and stay a pin as well
                 preventStealing: true
                 property real pressX: 0
                 property bool dragged: false
                 onPressed: mouse => { pressX = mouse.x; dragged = false }
                 onPositionChanged: mouse => {
-                    if (!pressed || tab.type === "away" || tab.header || !(pressedButtons & Qt.LeftButton))
+                    if (!pressed || tab.face || tab.type === "away" || tab.header || !(pressedButtons & Qt.LeftButton))
                         return;
                     const x = mapToItem(strip, mouse.x, 0).x;
                     if (!dragged && Math.abs(mouse.x - pressX) > 8) {

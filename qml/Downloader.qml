@@ -149,6 +149,11 @@ QtObject {
                 session.updateDownload(id, { state: "running", reason: "" });
                 resume(id, r);
             } else if (!r) {
+                // the part-file the run it stopped in left goes first: a part-file's name counts as taken (requests.cpp),
+                // and the file came as "<name> (1)" with the old part left in Downloads under no row. Not while another
+                // record of that file is coming: the part may be its.
+                if (d.path && !session.downloads.some(o => o.id !== d.id && o.path === d.path && (o.state === "running" || o.state === "paused")))
+                    Disk.remove(d.path + ".download");
                 fetch(d);
             }
             break;

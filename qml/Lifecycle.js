@@ -22,6 +22,16 @@ function keeps(p, always, edited) {
     return "";
 }
 
+// CEF says nothing of a page's sound unless it captures it, which mutes the page (a0598cc), so on CEF `audible` is
+// never set. Before a page unloads the net asks it (Main.unloadPage) with `playing`: a video or audio element of its
+// document playing with its sound on (not one inside another site's frame, nor Web Audio). A page found so at `at`
+// counts as audible for `heardFor`, then is asked again.
+var playing = "[...document.querySelectorAll('video, audio')].some(m => !m.paused && !m.ended && !m.muted && m.volume > 0)";
+var heardFor = 60000;
+function heard(at, now) {
+    return at > 0 && now - at < heardFor;
+}
+
 // A page the net, or Unload in Pages and memory, may unload: `p` as Main.memoryPages gives it (state, shown, where,
 // edited, needsYou and what keeps reads). Not one on screen, already unloaded, Always or a popup, nor one whose
 // ask waits behind its ● (PLAN.md 3.8): unloading it would drop the ask unanswered.

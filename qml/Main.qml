@@ -1745,6 +1745,8 @@ Window {
             visible: false
             // as Ctrl+Plus and Ctrl+Minus: the site's zoom, not on Opsis's own pages
             onZoomWanted: steps => { for (let i = 0; i < Math.abs(steps); i++) root.act(steps > 0 ? "zoomIn" : "zoomOut"); }
+            // as Alt+Left and Alt+Right
+            onHistoryWanted: forward => root.act(forward ? "forward" : "back")
             readsSections: root.sectionStripOn && !root.offTheRecord
             adblock: root.adblock
             session: sessionModel
@@ -2016,6 +2018,10 @@ Window {
             v.loginFailed.connect(text => root.showNotice({ text: text, action: "", where: "card" }, 4000));
             // window.print() of the page on screen: the print card, as Ctrl+P
             v.printWanted.connect(() => { if (v === root.currentView && !v.parked) root.openPrint() });
+            // a page whose row says muted starts so: a pin is every window's, and its view in a window that closed
+            // leaves its mute in the record
+            if (sessionModel.pages[pageId]?.muted)
+                v.audioMuted = true;
             views[pageId] = v;
         }
         return v;
@@ -2747,14 +2753,15 @@ Window {
     }
     // The pages the net picks from: each view's page, as Lifecycle.unloadable reads it, with the window that has it
     function netPages() {
-        const out = [];
+        const out = [], now = Date.now();
         for (const w of hub.mainWindows.concat(hub.privateWindows))
             for (const id in w.views) {
                 const v = w.views[id], p = w.windowSession.pages[id];
                 // a page with its popup open: the popup hands its answer back to it
                 if (p && !v.parked && !v.popup && !root.memoryAsking[id])
                     out.push(Object.assign({}, p, { id: id, owner: w, shown: v === w.currentView, where: p.thread === "" ? "Pinned" : "",
-                                                    state: Lifecycle.names[v.lifecycleState], edited: v.editedKept }));
+                                                    state: Lifecycle.names[v.lifecycleState], edited: v.editedKept,
+                                                    audible: p.audible || Lifecycle.heard(v.heardAt, now) }));
             }
         return out;
     }
@@ -3516,13 +3523,13 @@ Window {
     // Pages and memory's pages (PLAN.md 3.17): every main window's, or a private window's own, with the sign-in
     // windows' pages, each with its state, its process and what holds it live (Processes.js)
     function memoryPages() {
-        const out = [], seen = new Set();
+        const out = [], seen = new Set(), now = Date.now();
         const add = (w, id, v, p, where) => {
             const shown = !!v && w.visible && v === w.currentView;
             out.push(Object.assign({}, p, { id: id, title: p.title || RailRows.untitled(p.url ?? ""), where: where, shown: shown,
                                             state: v ? Lifecycle.names[v.lifecycleState] ?? "live" : "unloaded",
                                             pid: v && v.lifecycleState !== WebEngineView.LifecycleState.Discarded ? v.renderProcessPid : 0,
-                                            edited: !!v && v.editedKept }));
+                                            edited: !!v && v.editedKept, audible: p.audible || !!v && Lifecycle.heard(v.heardAt, now) }));
             if (v && v.popup)
                 out.push({ id: id + ":popup", title: v.popup.view.pageTitle || RailRows.untitled(String(v.popup.view.url)), url: String(v.popup.view.url),
                            icon: String(v.popup.view.icon), where: "popup", shown: false, state: "live", pid: v.popup.view.renderProcessPid });
@@ -3548,8 +3555,9 @@ Window {
         return out;
     }
     // Unload in Pages and memory, and the memory net's (relieveMemory): in the window that has the page; not the page on
-    // screen. A live page is asked first: where you stopped, and whether a field was edited, which keeps it live and says
-    // so in its row (`editedKept`). `done` runs once it is decided.
+    // screen. A live page is asked first: where you stopped, whether a field was edited, which keeps it live and says
+    // so in its row (`editedKept`), and whether it plays sound, which keeps it live for a while (`heardAt`,
+    // Lifecycle.heard). `done` runs once it is decided.
     function unloadPage(id, done) {
         const w = ownerOf(id) ?? root, v = w.views[id];
         const over = () => { if (done) done() };
@@ -3567,7 +3575,8 @@ Window {
             return;
         }
         const at = String(v.url);
-        v.runJavaScript("JSON.stringify({ edited: !!window.__browserEdited, stop: " + Recall.capture + " })", WebEngineScript.ApplicationWorld, answer => {
+        v.runJavaScript("JSON.stringify({ edited: !!window.__browserEdited, playing: " + Lifecycle.playing + ", stop: " + Recall.capture + " })",
+                        WebEngineScript.ApplicationWorld, answer => {
             let a = null;
             try {
                 a = JSON.parse(answer);
@@ -3579,8 +3588,14 @@ Window {
             const stop = a && !v.failure ? Recall.stop(a.stop, at, Date.now()) : undefined;
             if (stop !== undefined)
                 w.windowSession.setStopped(id, stop);
+            // the page's own mute is in `playing`; the browser's (Ctrl+M, the site's Sound) is the view's
+            const heard = a && a.playing && !v.audioMuted;
+            if (heard)
+                v.heardAt = Date.now();
             if (a && a.edited) {
                 v.editedKept = true;
+                over();
+            } else if (heard) {
                 over();
             } else if (v !== w.currentView && v.lifecycleState !== WebEngineView.LifecycleState.Discarded) {
                 unload();

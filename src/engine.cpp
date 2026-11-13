@@ -1,4 +1,5 @@
 #include "engine.h"
+#include "webstore.h"
 
 #include <QBuffer>
 #include <QCryptographicHash>
@@ -447,5 +448,12 @@ bool Engine::praxisHere() const {
 
 bool Engine::askPraxis(const QString &prompt) {
     const QString hand = QStandardPaths::findExecutable(QStringLiteral("claude-hand"));
-    return !hand.isEmpty() && QProcess::startDetached(hand, {QStringLiteral("new"), QDir::homePath(), prompt});
+    if (hand.isEmpty())
+        return false;
+    // with the data and cache folders Thyris was started with, not its own opsis-cef ones (main.cpp)
+    QProcess process;
+    process.setProgram(hand);
+    process.setArguments({QStringLiteral("new"), QDir::homePath(), prompt});
+    process.setProcessEnvironment(WebStore::relaunchEnvironment());
+    return process.startDetached();
 }

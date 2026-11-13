@@ -33,6 +33,7 @@ WebEngineView {
     signal selfClosed()                     // the page called window.close() (an attached popup closes on it)
     signal closeWanted()                    // Go back on a failure with nothing to go back to
     signal zoomWanted(int steps)            // Ctrl and the wheel, or a pinch, over the page (PageItem.zoomGesture)
+    signal historyWanted(bool forward)      // the mouse's back or forward button over the page (PageItem.historyButton)
     signal processStopped(string status, int code)  // renderProcessTerminated; `lastPid` was the process
     signal saveWanted(var ask)              // Save at a private window's "Save to the main profile?" (PLAN.md 3.14)
     signal loginFailed(string text)         // a login not saved or not filled, in the card's words (Logins.failed)
@@ -588,6 +589,7 @@ WebEngineView {
         target: view
         ignoreUnknownSignals: true
         function onZoomGesture(steps) { view.zoomWanted(steps) }
+        function onHistoryButton(forward) { view.historyWanted(forward) }
         // The page's process stopped answering (CEF's page only, 2026-10-24): its failure page offers Wait and Reload,
         // and goes when the process answers again, waits, or is ended
         function onUnresponsiveChanged() {
@@ -812,6 +814,8 @@ WebEngineView {
     // Pages and memory's Unload or the memory net found a field edited in this document (Main.unloadPage): it stays live,
     // and its row says so
     property bool editedKept: false
+    // when they last found it playing sound (Lifecycle.heard), 0 for never
+    property real heardAt: 0
 
     // `to`: the address the load is for.
     function newLoad(to) {

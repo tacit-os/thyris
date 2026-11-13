@@ -1,5 +1,6 @@
 #include "apps.h"
 #include "shell.h"
+#include "webstore.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -7,9 +8,28 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 
-// The Name= of a desktop file's [Desktop Entry], or "" if it has none.
+// The CEF build keeps its own data and cache in opsis-cef by moving XDG_DATA_HOME and XDG_CACHE_HOME there (main.cpp).
+// An app or xdg tool started from here gets the folders Thyris was started with (WebStore::relaunchEnvironment): with
+// Thyris's, xdg-mime and xdg-open found none of the launchers in ~/.local/share/applications, where Tacit's Apps puts
+// them, and an app they started made a new, empty profile inside opsis-cef. The checks keep their throwaway folders,
+// where EngineCheck::fakeApp puts its launcher.
+static QProcessEnvironment outside() {
+    return Apps::dryRun ? QProcessEnvironment::systemEnvironment() : WebStore::relaunchEnvironment();
+}
+
+static void startOutside(const QString &program, const QStringList &arguments) {
+    QProcess process;
+    process.setProgram(program);
+    process.setArguments(arguments);
+    process.setProcessEnvironment(outside());
+    process.startDetached();
+}
+
+// The Name= of a desktop file's [Desktop Entry], or "" if it has none. The person's own launchers first, as above.
 static QString desktopName(const QString &id) {
-    QFile file(QStandardPaths::locate(QStandardPaths::ApplicationsLocation, id));
+    const QString data = outside().value(QStringLiteral("XDG_DATA_HOME"));
+    const QString own = data.isEmpty() ? QString() : data + QStringLiteral("/applications/") + id;
+    QFile file(!own.isEmpty() && QFileInfo::exists(own) ? own : QStandardPaths::locate(QStandardPaths::ApplicationsLocation, id));
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return {};
     bool entry = false;
@@ -46,6 +66,7 @@ void Apps::lookUp(const QString &scheme) {
         process->deleteLater();
         emit found(scheme, QString());
     });
+    process->setProcessEnvironment(outside());
     process->start(QStringLiteral("xdg-mime"), {QStringLiteral("query"), QStringLiteral("default"), QStringLiteral("x-scheme-handler/") + scheme});
 }
 
@@ -53,7 +74,7 @@ void Apps::open(const QString &url) {
     m_lastOpened = url;
     emit opened();
     if (!dryRun)
-        QProcess::startDetached(QStringLiteral("xdg-open"), {url});
+        startOutside(QStringLiteral("xdg-open"), {url});
 }
 
 void Apps::reveal(const QString &path) {
@@ -66,13 +87,13 @@ void Apps::reveal(const QString &path) {
     connect(call, &QProcess::finished, this, [call, folder](int code, QProcess::ExitStatus status) {
         call->deleteLater();
         if (code != 0 || status != QProcess::NormalExit)
-            QProcess::startDetached(QStringLiteral("xdg-open"), {folder});
+            startOutside(QStringLiteral("xdg-open"), {folder});
     });
     connect(call, &QProcess::errorOccurred, this, [call, folder](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
             return;
         call->deleteLater();
-        QProcess::startDetached(QStringLiteral("xdg-open"), {folder});
+        startOutside(QStringLiteral("xdg-open"), {folder});
     });
     call->start(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("files"), QStringLiteral("reveal"), path});
 }
@@ -116,6 +137,7 @@ void Apps::lookUpDefault() {
         emit defaultFound();
     });
     // one query per type, in one shell: xdg-mime answers for one type at a time
+    process->setProcessEnvironment(outside());
     process->start(QStringLiteral("sh"), {QStringLiteral("-c"), QStringLiteral("xdg-mime query default x-scheme-handler/http; xdg-mime query default x-scheme-handler/https")});
 }
 
@@ -134,5 +156,6 @@ void Apps::makeDefault() {
         if (error == QProcess::FailedToStart)
             process->deleteLater();
     });
+    process->setProcessEnvironment(outside());
     process->start(QStringLiteral("xdg-mime"), QStringList{QStringLiteral("default"), desktopId()} + webTypes);
 }

@@ -481,6 +481,8 @@ TestCase {
         compare(texts(RailRows.menu(s, "always", a)), ["Copy link", "Move right", "-", "Unpin"]);
         s.update(b, { state: "frozen" });
         compare(texts(RailRows.menu(s, "always", b)), ["Reload", "Mute", "Copy link", "Move left", "-", "Close page", "Unpin"]);
+        // the strip's tab of a pin away from its start asks for the page menu: it gets the pin's
+        compare(texts(RailRows.menu(s, "page", b, false, true)), ["Reload", "Mute", "Copy link", "Move left", "-", "Close page", "Unpin", "-", "Show tabs on the side"]);
         const f = s.newThread("filed");
         s.addPage(f, "https://f.example/1", "");
         s.addPage(f, "https://f.example/2", "");

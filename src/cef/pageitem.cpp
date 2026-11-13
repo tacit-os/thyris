@@ -30,6 +30,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
+#include <QLineF>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QMutex>
@@ -2643,6 +2644,17 @@ void PageItem::hoverLeaveEvent(QHoverEvent *event) {
 }
 
 void PageItem::click(QMouseEvent *event, bool up, int count) {
+    // a side button is not the page's: it reached it as a left click
+    if (event->button() == Qt::BackButton || event->button() == Qt::ForwardButton) {
+        if (up)
+            emit historyButton(event->button() == Qt::ForwardButton);
+        event->accept();
+        return;
+    }
+    if (event->button() != Qt::LeftButton && event->button() != Qt::RightButton && event->button() != Qt::MiddleButton) {
+        event->ignore();
+        return;
+    }
     auto host = hostOf(m_client.get());
     if (!host)
         return;
@@ -2714,16 +2726,35 @@ void PageItem::traceSwapped() {
     }
 }
 
+// One more than the last press's when it is the same button again within the double-click time and distance, up to 3
+// (Chromium selects a word on 2, a paragraph or line on 3); else 1. Qt resets after a double click, so its third press
+// comes as a plain one.
+int PageItem::countClick(QMouseEvent *event) {
+    const QStyleHints *hints = QGuiApplication::styleHints();
+    const bool again = event->button() == m_clickButton && event->timestamp() - m_clickAt < quint64(hints->mouseDoubleClickInterval())
+        && QLineF(event->position(), m_clickPoint).length() <= hints->mouseDoubleClickDistance();
+    m_clicks = again ? qMin(m_clicks + 1, 3) : 1;
+    m_clickButton = event->button();
+    m_clickAt = event->timestamp();
+    m_clickPoint = event->position();
+    return m_clicks;
+}
+
 void PageItem::mousePressEvent(QMouseEvent *event) {
     forceActiveFocus(Qt::MouseFocusReason);
     // a click focuses the page even when this item had the keys already (no focusInEvent then)
     if (auto host = hostOf(m_client.get()))
         host->SetFocus(true);
-    click(event, false, 1);
+    click(event, false, countClick(event));
 }
 
+// Qt sends the second press first, at the same time, and that went to the page with its count: this adds nothing
 void PageItem::mouseDoubleClickEvent(QMouseEvent *event) {
-    click(event, false, 2);
+    if (event->timestamp() == m_clickAt && event->button() == m_clickButton) {
+        event->accept();
+        return;
+    }
+    click(event, false, countClick(event));
 }
 
 void PageItem::mouseMoveEvent(QMouseEvent *event) {
@@ -2734,7 +2765,7 @@ void PageItem::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void PageItem::mouseReleaseEvent(QMouseEvent *event) {
-    click(event, true, 1);
+    click(event, true, event->button() == m_clickButton ? m_clicks : 1);
 }
 
 // OPSIS_CEF_RECORD=<file>: every scroll step that reaches a page, one line each (ns, phase, pixel x y, angle x y), for
@@ -3319,11 +3350,15 @@ void PageItem::registerQml(QQmlEngine *engine) {
 }
 
 void PageItem::setZoomFactor(qreal factor) {
-    if (qFuzzyCompare(m_zoom, factor) || factor <= 0)
+    if (factor <= 0)
         return;
-    m_zoom = factor;
-    emit zoomFactorChanged();
-    // Chromium's zoom level: each step is a factor of 1.2
+    if (!qFuzzyCompare(m_zoom, factor)) {
+        m_zoom = factor;
+        emit zoomFactorChanged();
+    }
+    // Chromium's zoom level: each step is a factor of 1.2. Given again when this view's is unchanged: Chromium keeps a
+    // level per host, not per view, so a page of another site at the same zoom (BrowserView.applySite) would take its
+    // host's own instead
     if (CefRefPtr<CefBrowser> page = m_client ? m_client->browser() : nullptr)
         page->GetHost()->SetZoomLevel(std::log(factor) / std::log(1.2));
 }
@@ -3677,6 +3712,9 @@ CefRefPtr<PageClient> PageItem::adopt() {
     if (!m_errorPages)
         m_client->setErrorPages(false);
     m_client->attach(this, size().toSize(), window() ? window()->effectiveDevicePixelRatio() : 1, mapToGlobal(QPointF()).toPoint());
+    // a page opened in the background starts hidden, as openNow's: no visibility change comes for it until it shows
+    if (!isVisible())
+        m_client->hide(true);
     CefRuntime::pageOpening();
     return m_client;
 }

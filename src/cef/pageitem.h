@@ -251,6 +251,9 @@ signals:
     // Ctrl and the wheel, or a touchpad pinch, over the page: zoom it this many steps (+ in, - out). Chrome zooms in its
     // own browser layer before the page sees the wheel; CEF's off-screen view never does, so Opsis steps its site zoom
     void zoomGesture(int steps);
+    // the mouse's back or forward side button clicked over the page: CEF has no such button to give the page, so Opsis
+    // goes back or forward itself
+    void historyButton(bool forward);
     void renderProcessPidChanged();
     void unresponsiveChanged();
     void audioMutedChanged();
@@ -307,6 +310,12 @@ private:
     QSize m_lastFrame;                  // the last frame's size in pixels (frameFits)
     void answered(int call, bool done, const QByteArray &json);
     void click(QMouseEvent *event, bool up, int count);
+    // a press's click count: Qt Quick has a double click but no triple one, which Chromium needs to select a paragraph
+    int countClick(QMouseEvent *event);
+    int m_clicks = 0;
+    quint64 m_clickAt = 0;
+    QPointF m_clickPoint;
+    Qt::MouseButton m_clickButton = Qt::NoButton;
     // a key the page left unhandled: the parent item gets it, as Qt WebEngine's view hands it on
     void unhandledKey(int cefType, int nativeCode);
     void editableFocused(bool on) { m_editable = on; }   // PageClient: a text field or editable element has the focus

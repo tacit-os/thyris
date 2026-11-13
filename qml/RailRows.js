@@ -541,6 +541,9 @@ function menu(session, type, ref, offTheRecord, tabsTop) {
         if (!p)
             return [];
         const t = session.threadById(p.thread);
+        // a pin is in no task: its tab away from its start (the strip's "away") takes the pin's menu
+        if (!t)
+            return session.always.indexOf(ref) >= 0 ? menu(session, "always", ref, offTheRecord, tabsTop) : [];
         const loaded = p.state !== "unloaded";
         const several = t.pages.length > 1;
         const others = session.openThreads().filter(o => o.id !== t.id)
