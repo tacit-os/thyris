@@ -731,6 +731,7 @@ void EngineCheck::launch(const QStringList &args, const QVariantMap &env, bool v
         process->start(QStringLiteral("/bin/sh"), QStringList{QStringLiteral("-c"), QStringLiteral("\"$0\" \"$@\"; exit $?"), self} + args);
     else
         process->start(self, args);
+    m_launched.insert(QStringLiteral("pid"), process->processId());
 }
 
 qint64 EngineCheck::pid() const {

@@ -8,8 +8,12 @@ set -eu
 data=${XDG_DATA_HOME:-$HOME/.local/share/opsis-cef}
 out=$data/browser/extensions/ubol
 id=ddkjiahejlhfcafbddmgiahcphecmpfh
-tmp=$(mktemp -d)
+# fetched and unpacked beside the folder it replaces, so it goes in by a rename: a run cut off (the thyris wrapper's
+# timeout) leaves the old copy or none, never part of one, and its own folder goes with it
+mkdir -p "$(dirname "$out")"
+tmp=$(mktemp -d -p "$(dirname "$out")" .ubol.XXXXXX)
 trap 'rm -rf "$tmp"' EXIT
+trap 'exit 143' HUP INT TERM
 curl -fsSL -o "$tmp/ubol.crx" \
     "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=154.0&acceptformat=crx3&x=id%3D$id%26uc"
 # CRX3: "Cr24", version 3, a signed header, then the zip
@@ -25,7 +29,6 @@ if manifest.get("manifest_version") != 3 or "declarativeNetRequest" not in manif
     sys.exit("update-ubol: the download is not uBlock Origin Lite")
 PY
 version=$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$tmp/new/manifest.json")
-mkdir -p "$(dirname "$out")"
 rm -rf "$out.old"
 [ -d "$out" ] && mv "$out" "$out.old"
 mv "$tmp/new" "$out"

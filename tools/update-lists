@@ -1,10 +1,11 @@
 #!/bin/sh
 # Downloads uBlock Origin's default filter lists and converts its scriptlets for the adblock engine.
-# Output: ${XDG_DATA_HOME:-~/.local/share}/browser/adblock/{lists/*.txt,resources.json}
-# The browser reads them at startup.
+# Output: {lists/*.txt,resources.json} in the folder given, else in ${XDG_DATA_HOME:-~/.local/share}/browser/adblock, the
+# Qt WebEngine build's; the CEF build reads ~/.local/share/opsis-cef/browser/adblock, and its "no filter lists" warning
+# names its folder. The browser reads them at startup.
 set -eu
 
-out=${XDG_DATA_HOME:-$HOME/.local/share}/browser/adblock
+out=${1:-${XDG_DATA_HOME:-$HOME/.local/share}/browser/adblock}
 here=$(dirname "$(readlink -f "$0")")
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

@@ -65,8 +65,14 @@ PageItem {
         target: settings
         function onErrorPageEnabledChanged() { setErrorPages(settings.errorPageEnabled) }
     }
-    // scripts off as the view is made (the Retry fetcher's): Chromium takes it when the page is made, after this
-    Component.onCompleted: if (!settings.javascriptEnabled) setScripts(false)
+    // scripts and the PDF viewer off as the view is made (the Retry fetcher's): Chromium takes them when the page is made,
+    // after this
+    Component.onCompleted: {
+        if (!settings.javascriptEnabled)
+            setScripts(false)
+        if (!settings.pdfViewerEnabled)
+            setPdfViewer(false)
+    }
     // CEF says a page is playing only through CefAudioHandler, which takes the sound off the speakers (its loopback
     // stream mutes the source), so a live page is asked every 2 s instead (the owner, 2026-11-13): a video or audio
     // element of its document playing with its sound on, Lifecycle.playing's test (not one inside another site's frame,

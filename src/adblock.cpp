@@ -274,7 +274,8 @@ static void *buildEngine(const QString &dataDir, QVariantList *lists, bool build
         lists->append(list);
     }
     if (trusted.isEmpty() && other.isEmpty()) {
-        qCWarning(lcAdblock) << "no filter lists in" << listsDir << "- run tools/update-lists; ad blocking is off";
+        // the folder named, as the CEF build's is not where the script writes by default
+        qCWarning(lcAdblock) << "no filter lists in" << listsDir << "- run tools/update-lists" << dataDir << "; ad blocking is off";
         return nullptr;
     }
     if (!build)

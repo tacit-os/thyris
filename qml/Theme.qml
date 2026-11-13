@@ -60,8 +60,9 @@ QtObject {
     readonly property color colLayer2: solveOverlayColor(surfaceContainerLow, surfaceContainer, 1 - ThemeSource.contentTransparency)
     readonly property color colOnLayer2: onSurface
 
-    // Window ground shared with Code, the Claude app and foot: the terminal background.
-    readonly property color terminal: ThemeSource.terminalBackground
+    // Window ground shared with Code, the Claude app and foot: the terminal background; surfaceContainerLow (its
+    // fallback too) while the shell has written neither file
+    readonly property color terminal: ThemeSource.terminalBackground.valid ? ThemeSource.terminalBackground : surfaceContainerLow
     // The one switch for the window's glass: Hyprland's rule `opacity 0.85 0.77` for class browser (as
     // for zen) makes the whole window this opaque over its blurred wallpaper, so the app draws itself
     // opaque, and shot mode lays the wallpaper over the window at 1 - windowOpacity to show the same.

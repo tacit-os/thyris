@@ -33,12 +33,24 @@ echo "running $what on $CLOUD_VM"
 [ -n "${BROWSER_CLOUD_NOWAIT:-}" ] && exit 0
 
 ssh 'until [ "$(cat ~/opsis/logs/state)" = done ]; do sleep 15; done'
+# the wait above ends too when the connection drops: only a run that ended has logs to read
+if [ "$(ssh 'cat ~/opsis/logs/state 2>/dev/null')" != done ]; then
+    echo "lost $CLOUD_VM before the run ended; nothing is read from it" >&2
+    exit 1
+fi
+# this run's logs, never an earlier run's left here
 mkdir -p "$root/build-cloud"
+rm -f "$root/build-cloud/qt.log" "$root/build-cloud/cef.log"
 "$gcloud" compute scp "$CLOUD_VM":~/opsis/logs/'*.log' "$root/build-cloud/" "${at[@]}" >/dev/null 2>&1
 failed=0
 for engine in qt cef; do
     log=$root/build-cloud/$engine.log
-    { [ "$what" = "$engine" ] || [ "$what" = both ]; } && [ -f "$log" ] || continue
+    { [ "$what" = "$engine" ] || [ "$what" = both ]; } || continue
+    if [ ! -f "$log" ]; then
+        echo "== $engine: no log came back"
+        failed=1
+        continue
+    fi
     echo "== $engine: $(grep -E '^== [0-9]+ checks' "$log" | tail -1 | sed 's/^== //')"
     grep '^FAIL' "$log" | cut -c1-160 || true
     # passing needs checks that ran: "0 checks, 0 failed" is a build or a group that never ran

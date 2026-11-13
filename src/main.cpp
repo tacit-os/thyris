@@ -397,15 +397,26 @@ int main(int argc, char *argv[]) {
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); },
                      Qt::QueuedConnection);
     engine.loadFromModule("Browser", "Main");
-    // OPSIS_TERM_QUITS, for training the engine's speed profile (~/book4-edge/opsis-beat-chrome-plan.md stage 2):
-    // SIGTERM quits as Ctrl+Q does, so the browser ends through here and its profile is written at exit
+    // SIGTERM (logind's at Restart, Shut down and Log out) quits as Ctrl+Q does, so the quit's steps still run: where you
+    // stopped on each page, a Clear browsing data or a password's Delete waiting on its undo, the save. One that has not
+    // ended 5 s on (its event loop stuck) is ended by the alarm, as SIGTERM ended it before. The checks and shots keep
+    // SIGTERM's own end (their runs' timeouts stop them). OPSIS_TERM_QUITS, for training the engine's speed profile
+    // (~/book4-edge/opsis-beat-chrome-plan.md stage 2), sets no limit, so the profile is written at exit however long.
     static int termPipe[2] = {-1, -1};
-    if (qEnvironmentVariableIsSet("OPSIS_TERM_QUITS") && ::pipe(termPipe) == 0) {
-        std::signal(SIGTERM, [](int) { const char c = 0; (void)!::write(termPipe[1], &c, 1); });
+    static const bool training = qEnvironmentVariableIsSet("OPSIS_TERM_QUITS");
+    if ((training || (!checkMode && !shotMode)) && ::pipe(termPipe) == 0) {
+        std::signal(SIGTERM, [](int) {
+            const char c = 0;
+            (void)!::write(termPipe[1], &c, 1);
+            if (!training)
+                ::alarm(5);
+        });
         auto *term = new QSocketNotifier(termPipe[0], QSocketNotifier::Read, &app);
         QObject::connect(term, &QSocketNotifier::activated, &engine, [&engine] {
             if (!engine.rootObjects().isEmpty())
                 QMetaObject::invokeMethod(engine.rootObjects().constFirst(), "quitAll");
+            else
+                QCoreApplication::quit();
         });
     }
     const int code = app.exec();

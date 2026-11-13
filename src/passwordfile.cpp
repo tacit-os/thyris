@@ -123,7 +123,12 @@ QString PasswordFile::originOf(QString address, bool *app) {
         return {};
     const int port = url.port();
     const bool usual = port == -1 || (scheme == u"https" && port == 443) || (scheme == u"http" && port == 80);
-    return scheme + u"://"_s + url.host().toLower() + (usual ? QString() : u':' + QString::number(port));
+    // the host as location.origin writes it: a name that is not ASCII in punycode (xn--bcher-kva.de), an IPv6 address
+    // in brackets
+    QString host = url.host(QUrl::EncodeUnicode).toLower();
+    if (host.contains(u':'))
+        host = u'[' + host + u']';
+    return scheme + u"://"_s + host + (usual ? QString() : u':' + QString::number(port));
 }
 
 namespace {
@@ -201,9 +206,12 @@ PasswordFile::Parsed PasswordFile::parse(const QByteArray &bytes) {
             continue;
         }
         const QString name = at(user).trimmed().isEmpty() ? at(email).trimmed() : at(user).trimmed();
-        // Bitwarden may list several addresses for one login, a comma or a line apart
+        // Bitwarden may list several addresses for one login, a comma or a line apart; in another service's file a comma
+        // is part of the address (https://example.com/map?c=40.7,-74.0) unless another address follows it
+        static const QRegularExpression bitwarden(QStringLiteral("[,\\n]")),
+            other(QStringLiteral("\\n|,(?=\\s*[a-z][a-z0-9+.-]*://)"), QRegularExpression::CaseInsensitiveOption);
         bool app = false, anyOrigin = false, addedHere = false;
-        for (const QString &part : at(address).split(QRegularExpression(QStringLiteral("[,\\n]")), Qt::SkipEmptyParts)) {
+        for (const QString &part : at(address).split(out.service == u"Bitwarden" ? bitwarden : other, Qt::SkipEmptyParts)) {
             const QString origin = originOf(part, &app);
             if (origin.isEmpty())
                 continue;

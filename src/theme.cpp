@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
@@ -17,13 +18,16 @@ ThemeSource::ThemeSource(QObject *parent) : QObject(parent) {
     m_debounce.setInterval(150);
     connect(&m_debounce, &QTimer::timeout, this, &ThemeSource::reload);
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, &m_debounce, qOverload<>(&QTimer::start));
+    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, &m_debounce, qOverload<>(&QTimer::start));
     reload();
 }
 
 void ThemeSource::reload() {
+    // a file read while it is being written does not parse: what was read before stays
     QFile colors(m_colorsPath);
     if (colors.open(QIODevice::ReadOnly))
-        m_colors = QJsonDocument::fromJson(colors.readAll()).object().toVariantMap();
+        if (const QJsonObject read = QJsonDocument::fromJson(colors.readAll()).object(); !read.isEmpty())
+            m_colors = read.toVariantMap();
 
     QFile terminal(m_terminalPath);
     if (terminal.open(QIODevice::ReadOnly)) {
@@ -35,8 +39,8 @@ void ThemeSource::reload() {
         m_terminal = QColor(m_colors.value(QStringLiteral("surface_container_low")).toString());
 
     QFile config(m_configPath);
-    if (config.open(QIODevice::ReadOnly)) {
-        const QJsonObject root = QJsonDocument::fromJson(config.readAll()).object();
+    const QJsonObject root = config.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(config.readAll()).object() : QJsonObject();
+    if (!root.isEmpty()) {
         const QJsonObject appearance = root.value(u"appearance").toObject();
         m_fonts = appearance.value(u"fonts").toObject().toVariantMap();
         const QJsonObject transparency = appearance.value(u"transparency").toObject();
@@ -45,8 +49,17 @@ void ThemeSource::reload() {
         m_wallpaper = wallpaper.isEmpty() ? QUrl() : QUrl::fromLocalFile(wallpaper);
     }
 
-    for (const QString &path : {m_colorsPath, m_terminalPath, m_configPath})
+    // the files and their folders: a file the shell writes for the first time (Thyris started before it) or makes again
+    // after a while is read then too; a folder not made yet is watched through the nearest one that is, inside home
+    const QString home = QDir::homePath();
+    for (const QString &path : {m_colorsPath, m_terminalPath, m_configPath}) {
         if (!m_watcher.files().contains(path) && QFile::exists(path))
             m_watcher.addPath(path);
+        QString dir = QFileInfo(path).absolutePath();
+        while (!QFileInfo::exists(dir) && dir.size() > home.size())
+            dir = QFileInfo(dir).absolutePath();
+        if (dir != home && !m_watcher.directories().contains(dir))
+            m_watcher.addPath(dir);
+    }
     emit changed();
 }

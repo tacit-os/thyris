@@ -7,7 +7,7 @@ QtObject {
         AllowAllUnknownUrlSchemes = 3 }
 
     // a view's settings: kept, and not applied to the page yet (slice 3), but errorPageEnabled and, as the view is
-    // made, javascriptEnabled (WebEngineView.qml)
+    // made, javascriptEnabled and pdfViewerEnabled (WebEngineView.qml)
     property bool javascriptEnabled: true
     property bool errorPageEnabled: true
     property bool pdfViewerEnabled: true

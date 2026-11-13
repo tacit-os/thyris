@@ -1166,6 +1166,37 @@ public:
         QMutexLocker lock(&m_lock);
         m_filter = std::move(filter);
     }
+    // GUI thread, before the page is made: a PDF its main frame loads comes as a download (PageItem::setPdfViewer)
+    void noPdfViewer() {
+        QMutexLocker lock(&m_lock);
+        m_noPdfViewer = true;
+    }
+    // A main-frame load of such a page whose answer is a PDF (IO thread, before Chromium's viewer takes it): the load
+    // stops, told as a download (stopped, isDownload) however it ends, and the address is fetched again as one, with the
+    // same cookies
+    class PdfAsFile : public CefResourceRequestHandler {
+    public:
+        explicit PdfAsFile(CefRefPtr<PageClient> client) : m_client(std::move(client)) {}
+        bool OnResourceResponse(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame>, CefRefPtr<CefRequest> request,
+                                CefRefPtr<CefResponse> response) override {
+            if (!browser || QString::fromStdString(response->GetMimeType().ToString()).compare(u"application/pdf", Qt::CaseInsensitive) != 0)
+                return false;
+            {
+                QMutexLocker lock(&m_client->m_lock);
+                m_client->m_pdfAsFile = true;
+            }
+            CefPostTask(TID_UI, base::BindOnce([](CefRefPtr<PageClient> c, CefRefPtr<CefBrowser> b, CefString url) {
+                c->m_navDownload = true;
+                b->StopLoad();
+                b->GetHost()->StartDownload(url);
+            }, m_client, browser, request->GetURL()));
+            return false;
+        }
+
+    private:
+        CefRefPtr<PageClient> m_client;
+        IMPLEMENT_REFCOUNTING(PdfAsFile);
+    };
     void giveHtml(const QUrl &url, const QByteArray &html) {
         QMutexLocker lock(&m_lock);
         m_givenUrl = url;
@@ -1183,9 +1214,11 @@ public:
         QByteArray given;
         const QUrl url(QString::fromStdString(request->GetURL().ToString()));
         const cef_resource_type_t type = request->GetResourceType();
+        bool pdfAsFile = false;
         {
             QMutexLocker lock(&m_lock);
             filter = m_filter;
+            pdfAsFile = m_noPdfViewer && type == RT_MAIN_FRAME;
             // loadHtml's page: its document from the string, at its address (no request leaves for it)
             if (type == RT_MAIN_FRAME && !m_givenHtml.isNull() && url == m_givenUrl)
                 given = std::exchange(m_givenHtml, QByteArray());
@@ -1193,7 +1226,7 @@ public:
         if (!given.isNull())
             return new ServedRequest(QByteArrayLiteral("text/html"), given);
         if (!filter)
-            return nullptr;
+            return pdfAsFile ? new PdfAsFile(this) : nullptr;
         // the top document's address, as Qt's firstPartyUrl: the request's own for a main-frame load
         QUrl page = url;
         if (type != RT_MAIN_FRAME && type != RT_NAVIGATION_PRELOAD_MAIN_FRAME) {
@@ -1211,7 +1244,7 @@ public:
         case RequestDecision::Allow:
             break;
         }
-        return nullptr;
+        return pdfAsFile ? new PdfAsFile(this) : nullptr;
     }
     // a request's type as uBlock Origin's lists name it (Qt's interceptor maps its own the same way, src/adblock.cpp)
     static const char *kind(cef_resource_type_t type) {
@@ -1999,6 +2032,10 @@ public:
         m_navActive = true;
         m_navUrl = url;
         m_navDownload = false;
+        {
+            QMutexLocker lock(&m_lock);
+            m_pdfAsFile = false;
+        }
         m_errorPage = false;
         emitLoad(loadInfo(0, url));
     }
@@ -2183,6 +2220,19 @@ public:
         if (!m_navActive)
             return;
         m_navActive = false;
+        // a PDF turned into a download (PdfAsFile) that Chromium's viewer showed before the stop came: it ends as one
+        bool asFile = false;
+        {
+            QMutexLocker lock(&m_lock);
+            asFile = std::exchange(m_pdfAsFile, false);
+        }
+        if (asFile) {
+            m_navDownload = false;
+            QVariantMap info = loadInfo(1, m_navUrl);
+            info.insert(QStringLiteral("isDownload"), true);
+            emitLoad(info);
+            return;
+        }
         QVariantMap info = loadInfo(2, QUrl(QString::fromStdString(frame->GetURL().ToString())));
         if (status >= 400) {
             info.insert(QStringLiteral("errorCode"), status);
@@ -2444,6 +2494,8 @@ private:
     std::shared_ptr<PageFrames> m_frames;
     CefRefPtr<CefBrowser> m_browser;
     RequestFilterRef m_filter;      // the profile's (setFilter), asked on the IO thread
+    bool m_noPdfViewer = false;     // noPdfViewer, under m_lock
+    bool m_pdfAsFile = false;       // the main-frame load under way is a PDF PdfAsFile turned into a download, under m_lock
     QUrl m_givenUrl;                // loadHtml: the next main-frame load of this address gets this document
     QByteArray m_givenHtml;
     const qint64 m_traceT0 = traced ? nowNs() : 0;     // OPSIS_CEF_TRACE: the page's client made
@@ -3794,6 +3846,9 @@ void PageItem::openNow() {
     // a view made with scripts off (the Retry fetcher in Main.qml) runs none of its page's
     if (!m_scripts)
         settings.javascript = STATE_DISABLED;
+    // and one made with the PDF viewer off (the same fetcher) shows no PDF: it comes as a download
+    if (!m_pdfViewer)
+        m_client->noPdfViewer();
     CefRuntime::pageOpening();
     // blank until its scripts are in (PageClient::loadPending), then the address
     m_restorePending = !m_restore.isEmpty();

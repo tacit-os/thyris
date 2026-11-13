@@ -123,10 +123,11 @@ void Picker::readRelay() {
         // the log line may carry colour codes after the list
         const QByteArray rest = line.mid(at + marker.size());
         const QJsonArray list = QJsonDocument::fromJson(rest.left(rest.lastIndexOf(']') + 1)).array();
+        // each path as Files gave it: a name may begin or end with a space
         QStringList paths;
         for (const auto &v : list)
-            if (v.isString() && !v.toString().trimmed().isEmpty())
-                paths.append(v.toString().trimmed());
+            if (v.isString() && !v.toString().isEmpty())
+                paths.append(v.toString());
         end(paths);
         return;
     }

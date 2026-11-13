@@ -82,7 +82,7 @@ public:
     Q_INVOKABLE int serveTls();
     // A port on 127.0.0.1 nothing listens on, so a load there is refused.
     Q_INVOKABLE int closedPort();
-    // Sends `signal` to process `pid` (a page process of this check's own engine).
+    // Sends `signal` to process `pid` (a page process of this check's own engine, a browser it launched).
     Q_INVOKABLE bool sendSignal(qint64 pid, int signal);
     // An app named `name` as the default for links of `scheme`, in the throwaway data dir's applications.
     Q_INVOKABLE bool fakeApp(const QString &scheme, const QString &name);
@@ -154,8 +154,8 @@ public:
     Q_INVOKABLE void back(QObject *window = nullptr);
     // A second `browser <args>`, as another app runs it: through `sh -c` when `viaShell` (a process between this one
     // and it), in this process's environment (the throwaway dirs) with `env` added, in the working directory `dir`
-    // when given. launched() says how it went: { code: its exit code, -1 while it runs, ms, output }. One still
-    // running after `limit` ms is killed (code -2).
+    // when given. launched() says how it went: { code: its exit code, -1 while it runs, ms, output; pid while it runs }.
+    // One still running after `limit` ms is killed (code -2).
     Q_INVOKABLE void launch(const QStringList &args, const QVariantMap &env = {}, bool viaShell = false, const QString &dir = QString(),
                             int limit = 10000);
     Q_INVOKABLE QVariantMap launched() const { return m_launched; }

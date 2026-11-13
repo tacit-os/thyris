@@ -1360,6 +1360,13 @@ QtObject {
           expect: () => check.record().state === "failed" && check.record().reason === "no file" && downloads.fetchUrl === "" },
         { name: "and its script never ran in the hidden fetcher, with your cookies: it set none", wait: 1200, act: () => SiteData.cookies("scripted.test"),
           expect: () => SiteData.cookies("scripted.test") === 0 },
+        { name: "a Retry whose address shows a PDF in the page (application/pdf, no attachment): the hidden fetcher shows no PDF, the file lands", wait: 3000,
+          act: () => { downloads.act(check.dl, "remove");
+              check.dl = session.addDownload({ page: session.currentPage, url: check.local("/sheet.pdf"), file: "sheet.pdf", path: Disk.downloads + "/sheet.pdf",
+                                               state: "failed", reason: "browser closed" });
+              downloads.act(check.dl, "retry") },
+          expect: () => { probe.report("     " + check.record().state + " " + (check.record().reason || ""));
+              return check.record().state === "done" && Facts.isFile(check.record().path) && downloads.fetchUrl === "" } },
         { name: "(an Always page that opens pages)", wait: 2000,
           act: () => { check.alwaysPage = session.addAlways(check.served("pin", "/popup-opener"), "pin"); app.show(check.alwaysPage) },
           expect: () => session.currentPage === check.alwaysPage && view.title === "opener" && !view.loading },
@@ -1699,7 +1706,23 @@ QtObject {
           act: () => app.instance.holding = false,
           expect: () => check.launchedOk() && session.current.url === check.served("held", "/plain") && session.current.from === "foot"
               && probe.fixtureText("standin/qs.log").indexOf(" notAnsweringGone " + check.asked()[0].id) >= 0 },
+        // SIGTERM, as logind sends it at Restart, Shut down and Log out: a whole second browser, on a data dir of its own
+        // (so it hands no link to this one), quits through its quit's steps and saves its run as closed cleanly
+        { name: "(a second browser in normal mode on a data dir of its own, its run started)", wait: 9000,
+          act: () => probe.launch([check.served("term", "/plain")], { XDG_DATA_HOME: probe.fixtureDir("term") }, false, "", 60000),
+          expect: () => probe.launched().code === -1 && probe.launched().pid > 0 && check.termRun()?.clean === false },
+        { name: "SIGTERM quits it as Ctrl+Q does: it ends by itself within 5 s with exit 0, its run saved as closed cleanly", wait: 5000,
+          act: () => probe.sendSignal(probe.launched().pid, 15),
+          expect: () => check.launchedOk() && check.termRun()?.clean === true },
     ]
+    // the run record of the instance group's second browser (Main.writeRun, saveAll), null for none
+    function termRun() {
+        try {
+            return JSON.parse(probe.fixtureText("term/browser/run.json"));
+        } catch (e) {
+            return null;
+        }
+    }
     // The shell for the instance group's busy browser: each `qs ... ipc call island <function> <argument>` is a line of
     // qs.log beside it; a not-answering prompt is shown, and the first one answered Wait a second later, as a person would
     readonly property string standInShell: "#!/bin/sh\n"
@@ -2127,6 +2150,12 @@ QtObject {
           act: () => app.privateWindows[1].go(check.bothUrl("/cookie#second"), "new", "", "both"),
           expect: () => app.privateWindows[1].currentView.title === "cookie", pageIn: () => app.privateWindows[1].currentView, page: "window.before", pageExpect: v => v === "" },
         { name: "(the second private window closed)", wait: 1500, act: () => app.privateWindows[1].close(), expect: () => app.privateWindows.length === 1 && app.quits === check.quits },
+        // the browser's own pages are served on a private window's own request context too, not only on the global one
+        { name: "Ctrl+, there opens Settings in the private window: browser://settings answers on its own profile (titled Settings, no failure page)",
+          wait: 2000, act: () => { probe.back(check.priv()); check.later(() => probe.press(Qt.Key_Comma, ctrl)) },
+          expect: () => { const w = check.priv(), v = w.currentView;
+              return w.active && w.ownKind === "settings" && !!v && !v.failure && v.title === "Settings" && v.profile === w.profile } },
+        { name: "(Settings left there)", wait: 1200, act: () => check.priv().leaveSettings(), expect: () => check.priv().ownKind === "" },
         { name: "closing the private window: it and its profile go, the main window stays; its closed pages, History and Ctrl+Shift+T get nothing", wait: 2000,
           act: () => { check.closedCount = session.closed.length; check.reopen = session.reopenName(); check.privateProfile = check.priv().profile; check.priv().close() },
           expect: () => { probe.report("     its profile afterwards: " + check.privateProfile);
@@ -3527,6 +3556,14 @@ QtObject {
               return made[0].files > 0 && made.every(r => r.holding.length === 0) && keyring.length > 0 && control.holding.length > 0 } },
         { name: "and none reached this run's output, stdout or stderr, the engine's processes' included (the group's heading found there)",
           expect: () => probe.outputHolding("== passwords at ") && check.pwMade().every(t => !probe.outputHolding(t)) },
+        { name: "(the login page of bücher.test, a site whose name is not ASCII: its address read decoded, its page's origin in punycode)", wait: 1500,
+          act: () => app.go(check.served("bücher", "/pw-login"), "navigate"),
+          expect: () => view.title === "login" && String(view.url).indexOf("bücher.test") > 0 },
+        { name: "its user name field's focus is a login field's, at the origin the page sends, http://xn--bcher-kva.test:<port>", wait: 900, focus: "user.focus()",
+          expect: () => view.loginField !== null && view.loginField.origin === "http://xn--bcher-kva.test:" + check.port },
+        { name: "and a login form sent there offers to save it", wait: 2500, focus: "user.focus()", act: () => check.sendLogin(check.pwUser, check.pwOne),
+          expect: () => view.title === "signed in" && !!view.ask && view.ask.kind === "password" },
+        { name: "(Not now)", wait: 600, act: () => check.clickNamed(check.section(), "askAction:notnow"), expect: () => !view.ask },
         // the groups after this one start on a web page, as they would without it
         { name: "(Settings closed)", wait: 800, act: () => { for (const id of check.ownPages("browser://settings")) app.closePage(id) },
           expect: () => check.ownPages("browser://settings").length === 0 && app.ownKind === "" && !!view },
@@ -4001,6 +4038,37 @@ QtObject {
               PasswordFile.bring();
           },
           expect: () => check.pf.proton === "Proton Pass 1 1" && !!check.pf.saved && probe.keyringHolds("https://f.pf.test", check.pf.user7 + "@pf.test", check.pf.pass7) },
+        { name: "a site whose name is not ASCII and a device's IPv6 address (Firefox's): filed as the page's location.origin has them, https://xn--bcher-kva.pf.test and http://[fe80::1]:8080",
+          wait: 2500,
+          act: () => {
+              check.pf.saved = null;
+              for (const k of ["idnUser", "idnPass", "sixPass"])
+                  check.pf[k] = check.letters(k === "idnUser" ? 9 : 15);
+              const r = PasswordFile.read(probe.fixtureFile("logins.csv", '"url","username","password","httpRealm","formActionOrigin","guid","timeCreated","timeLastUsed","timePasswordChanged"\n'
+                  + '"https://bücher.pf.test/login","' + check.pf.idnUser + '","' + check.pf.idnPass + '",,"","{2}","1","1","1"\n'
+                  + '"http://[fe80::1]:8080/","' + check.pf.idnUser + '","' + check.pf.sixPass + '",,"","{3}","1","1","1"\n'));
+              check.pf.idn = r.service + " " + r.logins;
+              PasswordFile.bring();
+          },
+          expect: () => check.pf.idn === "Firefox 2" && !!check.pf.saved && check.pf.saved.added === 2
+              && probe.keyringHolds("https://xn--bcher-kva.pf.test", check.pf.idnUser, check.pf.idnPass)
+              && probe.keyringHolds("http://[fe80::1]:8080", check.pf.idnUser, check.pf.sixPass) },
+        { name: "a login an import filed before 1.2.15 under the name decoded (https://bücher.pf.test) is listed as its page sends it, https://xn--bcher-kva.pf.test, so it fills there",
+          wait: 1500,
+          act: () => { check.pf.oldUser = check.letters(9); Passwords.save("https://bücher.pf.test", check.pf.oldUser, check.pf.idnPass) },
+          expect: () => probe.keyringHolds("https://bücher.pf.test", check.pf.oldUser, check.pf.idnPass)
+              && Passwords.entries.some(e => e.origin === "https://xn--bcher-kva.pf.test" && e.user === check.pf.oldUser)
+              && !Passwords.entries.some(e => e.origin === "https://bücher.pf.test") },
+        { name: "an address with a comma in its path (Firefox's) is one address: one login, none filed under its tail (https://b)", wait: 2500,
+          act: () => {
+              check.pf.saved = null;
+              const r = PasswordFile.read(probe.fixtureFile("logins.csv", '"url","username","password","httpRealm","formActionOrigin","guid","timeCreated","timeLastUsed","timePasswordChanged"\n'
+                  + '"https://n.pf.test/a,b","' + check.pf.idnUser + '","' + check.pf.sixPass + '",,"","{4}","1","1","1"\n'));
+              check.pf.comma = r.logins;
+              PasswordFile.bring();
+          },
+          expect: () => check.pf.comma === 1 && !!check.pf.saved && check.pf.saved.added === 1
+              && probe.keyringHolds("https://n.pf.test", check.pf.idnUser, check.pf.sixPass) && !probe.keyringHolds("https://b", check.pf.idnUser, "") },
         { name: "Apple Passwords', KeePassXC's, LastPass's and Dashlane's exports named by their headers",
           act: () => {
               const row = (h, r) => PasswordFile.read(probe.fixtureFile("x.csv", h + "\n" + r + "\n")).service;

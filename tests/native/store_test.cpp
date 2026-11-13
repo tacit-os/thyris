@@ -15,10 +15,13 @@
 #include <QTemporaryDir>
 #include <QtEndian>
 #include <QSignalSpy>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QtTest>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
+#include <optional>
 #include <zlib.h>
 
 using namespace Qt::StringLiterals;
@@ -498,6 +501,39 @@ private slots:
         big.tooBig = true;
         big.status = 200;
         QVERIFY(run(big).contains(u"too big"));
+    }
+    // the real transport, against a server on this machine: a body cut off after the headers is a failed transfer, not
+    // a file of the bytes that came; a whole body and a 404 are as they came
+    void networkTellsACutTransfer() {
+        const auto fetch = [](const QByteArray &answer) {
+            QTcpServer server;
+            if (!server.listen(QHostAddress::LocalHost))
+                return StoreFetch::Reply{};
+            QObject::connect(&server, &QTcpServer::newConnection, &server, [&server, answer] {
+                QTcpSocket *s = server.nextPendingConnection();
+                QObject::connect(s, &QTcpSocket::readyRead, s, [s, answer] {
+                    s->readAll();
+                    s->write(answer);
+                    s->disconnectFromHost();
+                });
+            });
+            std::optional<StoreFetch::Reply> got;
+            StoreFetch::network()(QUrl(u"http://127.0.0.1:%1/crx"_s.arg(server.serverPort())), 1 << 20, [&got](StoreFetch::Reply r) { got = r; });
+            QElapsedTimer waited;
+            waited.start();
+            while (!got && waited.elapsed() < 10000)
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            return got.value_or(StoreFetch::Reply{});
+        };
+        const StoreFetch::Reply cut = fetch("HTTP/1.1 200 OK\r\nContent-Length: 1000\r\nConnection: close\r\n\r\nhalf a file");
+        QCOMPARE(cut.status, 200);
+        QVERIFY(cut.failed);
+        const StoreFetch::Reply whole = fetch("HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\nall of it!!");
+        QCOMPARE(whole.body, "all of it!!"_ba);
+        QVERIFY(!whole.failed);
+        const StoreFetch::Reply none = fetch("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        QCOMPARE(none.status, 404);
+        QVERIFY(!none.failed);
     }
     void realUpdateAnswer() {
         QFile f(QStringLiteral(SRCDIR "/update-answer.xml"));

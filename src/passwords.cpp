@@ -1,4 +1,5 @@
 #include "passwords.h"
+#include "passwordfile.h"
 
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
@@ -31,6 +32,15 @@ void answer(const QJSValue &done, const QJSValueList &args) {
 QString hostOf(const QString &origin) {
     const QString host = QUrl(origin).host();
     return host.isEmpty() ? origin : host;
+}
+// an item's origin as its page sends it: one an import filed with the name decoded (https://bücher.de, before 1.2.15)
+// is read in punycode (PasswordFile::originOf), so it fills there; every other as it is kept
+QString pageOrigin(const QString &origin) {
+    if (std::all_of(origin.cbegin(), origin.cend(), [](QChar c) { return c.unicode() < 0x80; }))
+        return origin;
+    bool app = false;
+    const QString encoded = PasswordFile::originOf(origin, &app);
+    return encoded.isEmpty() ? origin : encoded;
 }
 }
 
@@ -206,7 +216,7 @@ void Passwords::refresh() {
                 if (got.type() != QDBusMessage::ErrorMessage) {
                     const auto a = qdbus_cast<SecretAttributes>(got.arguments().value(0).value<QDBusVariant>().variant());
                     if (a.value(QStringLiteral("xdg:schema")) == schema && !a.value(QStringLiteral("origin")).isEmpty())
-                        found->append(QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("origin"), a.value(QStringLiteral("origin"))},
+                        found->append(QVariantMap{{QStringLiteral("id"), id}, {QStringLiteral("origin"), pageOrigin(a.value(QStringLiteral("origin")))},
                                                   {QStringLiteral("user"), a.value(QStringLiteral("user"))}});
                 }
                 if (--*left > 0)

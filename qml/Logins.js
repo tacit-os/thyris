@@ -82,7 +82,10 @@ function parse(text, pageOrigin) {
     } catch (e) {
         return null;
     }
-    if (!m || typeof m.origin !== "string" || m.origin !== pageOrigin || !/^https?:\/\//.test(m.origin))
+    // pageOrigin is read from String(view.url), which writes a name that is not ASCII decoded (bücher.de) where the page's
+    // location.origin has it in punycode (xn--bcher-kva.de): the message's origin is read through a url the same way
+    if (!m || typeof m.origin !== "string" || !/^https?:\/\//.test(m.origin)
+        || (m.origin !== pageOrigin && String(Qt.resolvedUrl(m.origin)).toLowerCase() !== pageOrigin))
         return null;
     return m;
 }

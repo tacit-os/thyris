@@ -50,7 +50,8 @@ StoreFetch::Transport StoreFetch::network() {
             out.tooBig = *big;
             out.body = std::move(*body);
             out.body.append(reply->readAll());
-            out.failed = out.status == 0 && !out.tooBig;
+            // a 200 whose body broke off (the stall or overall timeout, a reset) keeps its status: it failed all the same
+            out.failed = !out.tooBig && (out.status == 0 || (out.status == 200 && reply->error() != QNetworkReply::NoError));
             reply->deleteLater();
             done(out);
         });

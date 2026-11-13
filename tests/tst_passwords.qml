@@ -73,6 +73,11 @@ TestCase {
         compare(Logins.parse("not json", "https://github.com"), null);
         compare(Logins.parse(JSON.stringify({ origin: "null", role: "user" }), "null"), null, "a data: or file: page saves nothing");
         compare(Logins.parse(JSON.stringify({ origin: "file://", role: "user" }), "file://"), null);
+        // the page's own origin is punycode; the view's address, read as BrowserView reads it, has the name decoded
+        const idn = Logins.parse(JSON.stringify({ origin: "https://xn--bcher-kva.de", role: "user" }), Asks.originOf(String(Qt.resolvedUrl("https://xn--bcher-kva.de/login"))));
+        compare(idn ? idn.origin : null, "https://xn--bcher-kva.de", "a site whose name is not ASCII, its origin kept as the page sent it");
+        compare(Logins.parse(JSON.stringify({ origin: "https://xn--bcher-kva.de", role: "user" }), "https://xn--bcher-kva.com"), null);
+        compare(Logins.parse(JSON.stringify({ origin: "http://[fe80::1]:8080", role: "user" }), Asks.originOf("http://[fe80::1]:8080/admin")).role, "user");
     }
 
     function test_theLoginsOfAnOriginAndHowTheyRead() {
