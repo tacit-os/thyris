@@ -91,7 +91,7 @@ function lead(fold, s, behind) {
             : s.listFailure ? [["Ads and trackers are blocked, but the last list update ", false], ["failed", true], [".", false]]
             : upToDate(s) ? [["Ads and trackers are blocked, lists ", false], ["up to date", true], [".", false]]
             : s.lists.length > 0 ? [["Ads and trackers are blocked, lists updated ", false], [when(Math.max(...s.lists.map(l => l.modified || 0)), s.now), true], [".", false]]
-            : [["No ad lists yet: ", false], ["Update now", true], [" fetches them.", false]];
+            : s.canUpdate ? [["No ad lists yet: ", false], ["Update now", true], [" fetches them.", false]] : [["No ad lists yet.", false]];
         const n = s.passwords.state === "ready" ? s.passwords.entries.length : -1;
         return n < 0 ? lists : lists.concat([[n === 0 ? " No passwords are saved yet." : " " + (n === 1 ? "1 password is" : n + " passwords are") + " saved in your keyring.", false]]);
     }
@@ -504,7 +504,8 @@ function rows(s, sub, filter) {
     const lists = s.lists.map(l => l.file.indexOf("ubo-") === 0 ? "uBlock filters" : listName(l)).filter((n, i, all) => all.indexOf(n) === i);
     section("adblock", [
         { kind: "pair", key: "lists", label: "Lists", value: lists.length > 0 ? lists.join(", ") : "None" },
-        { kind: "action", key: "update", label: upToDate(s) ? "Up to date" : "Updated", action: s.updating || upToDate(s) ? "" : "Update now",
+        // Update now only where it can run (Adblock.canUpdate): the installed Tacit's lists come with Thyris
+        { kind: "action", key: "update", label: upToDate(s) ? "Up to date" : "Updated", action: s.updating || upToDate(s) || !s.canUpdate ? "" : "Update now",
           value: s.updating ? "Updating…" : s.lists.length > 0 ? when(Math.max(...s.lists.map(l => l.modified || 0)), s.now) : "never" },
     ].concat(s.listFailure ? [{ kind: "pair", key: "failure", label: "Last update failed", value: when(s.listFailure.at, s.now) + " · " + failure(s.listFailure.text) }] : []).concat([
         { kind: "link", key: "allowed", label: "Sites allowed", value: String(s.allowed.length), words: "Sites allowed ads " + s.allowed.join(" ") },

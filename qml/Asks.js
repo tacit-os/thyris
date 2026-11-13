@@ -14,11 +14,12 @@
 //                                                checked), ask (`name`, `version`, `icon`, `words`: what it can do, `source`
 //                                                "store" or "file", `update`), added (`name`: reopen to start it) or failed
 //                                                (`problem`)
+//   quit                                         Ctrl+Q while files are coming, which quitting cancels (Main.quitKey): `count`
 // `quiet`: a notification ask made without a click, shown only as a bell at the card's right.
 
 // Stacked states (PLAN.md 11): page-blocking > Claude needs you > permission > external app > saving (a page, a
 // password) > the insecure note, which AddressField shows only with no ask.
-var ranks = { leave: 0, signin: 0, proxy: 0, certificate: 0, passkey: 0, claude: 1, permission: 2, screen: 2, external: 3, save: 4, password: 4, extension: 2 };
+var ranks = { quit: -1, leave: 0, signin: 0, proxy: 0, certificate: 0, passkey: 0, claude: 1, permission: 2, screen: 2, external: 3, save: 4, password: 4, extension: 2 };
 
 // The queue as it shows: loud asks by rank, then in arrival order. The first is the one in the card.
 function order(asks) {
@@ -57,7 +58,7 @@ function preset(types, decided) {
 
 // What a waiting ask is, in the one word of its page's rail row (PLAN.md 3.20): "camera?", "sign in", "leave?"
 var askWords = { leave: "leave?", signin: "sign in", proxy: "sign in", certificate: "certificate?", passkey: "passkey",
-                 screen: "screen?", external: "open app?", save: "save?", password: "password?", extension: "add?" };
+                 screen: "screen?", external: "open app?", save: "save?", password: "password?", extension: "add?", quit: "quit?" };
 var typeWords = [["screen", "screen?"], ["camera", "camera?"], ["microphone", "mic?"], ["location", "location?"],
                  ["notifications", "notify?"], ["clipboard", "clipboard?"]];
 function word(a) {
@@ -179,6 +180,8 @@ function extensionView(a, out, button) {
     return out;
 }
 
+function running(n) { return n === 1 ? "1 download running" : n + " downloads running" }
+
 function view(a, pageHost) {
     const who = a.host && a.host !== pageHost ? a.host + " wants" : "Wants";
     const button = (label, choice) => ({ label: label, choice: choice });
@@ -261,6 +264,12 @@ function view(a, pageHost) {
     // Add to Thyris: the page only offered the id; what is asked is what the checked file says it can do
     case "extension":
         return extensionView(a, out, button);
+    // the owner, 2026-11-13: the count in the words, and Wait keeps Thyris as it is
+    case "quit":
+        out.lines = [{ text: running(a.count) }];
+        out.buttons = [button("Quit anyway", "quit"), button("Wait", "wait")];
+        out.negative = "wait";
+        break;
     // PLAN.md 7: a line in the card, "Save password for <host>? Save · Not now"
     case "password":
         out.lines = [{ text: "Save password for " + a.host + "?" }];

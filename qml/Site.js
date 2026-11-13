@@ -31,15 +31,16 @@ function choices(type) {
     }
     return [{ value: "", label: "Ask" }, { value: "allow", label: "Allow" }, { value: "block", label: "Block" }];
 }
-// A row's value at rest, for the site's choice `v`.
-function value(type, v) {
+// A row's value at rest, for the site's choice `v`. `using`: the page on screen has that device open now, which a Block
+// does not end, so it says when it applies (owner, 2026-11-13: no reload forced on a running call).
+function value(type, v, using) {
     switch (type) {
     case "ads":
     case "popups": return v === "allow" ? "Allowed" : "Blocked";
     case "sound": return v === "block" ? "Blocked" : "Allowed";
     case "slash": return v === "off" ? "Off" : "On";
     }
-    return v === "allow" ? "Allowed" : v === "block" ? "Blocked" : "Ask";
+    return v === "allow" ? "Allowed" : v === "block" ? (using ? "Blocked after a reload" : "Blocked") : "Ask";
 }
 
 // The permission types listed for a site's Sites entry ({ choices, asked }): what it asked for or you

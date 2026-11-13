@@ -2793,8 +2793,8 @@ void PageItem::wheelEvent(QWheelEvent *event) {
         m_fingersDown = false;
         emit touchpadGesture(false);
     }
-    // Ctrl and the wheel zooms the page, as in Chrome, where the browser takes it before the page does: a notch a step,
-    // a touchpad's smooth steps adding up to one
+    // Ctrl and the wheel zooms the page: a notch a step, a touchpad's smooth steps adding up to one
+    // Decided 2026-11-13 (owner): it and the pinch stay Thyris's zoom, though Chrome gives the page the wheel first, so every page zooms alike; page-first needs the page's preventDefault sent back.
     if (event->modifiers() & Qt::ControlModifier) {
         m_zoomRest += event->angleDelta().y();
         const qreal notch = QWheelEvent::DefaultDeltasPerStep;

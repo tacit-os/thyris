@@ -61,6 +61,7 @@ Rectangle {
     property var stops: []
     signal closeWanted()
     signal reopenWanted()
+    signal quitWanted()
     signal processStopped(string status, int code)
     // reader view (PLAN.md 3.9), set by the shots: whether the page has an article, and shows it
     property string article: ""

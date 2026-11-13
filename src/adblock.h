@@ -10,7 +10,8 @@
 class AdblockInterceptor;
 
 // Brave's adblock engine (adblock/, Rust) loaded with uBlock Origin's lists and scriptlets.
-// Data comes from tools/update-lists: <dataDir>/lists/*.txt and <dataDir>/resources.json.
+// Data comes from tools/update-lists: <dataDir>/lists/*.txt and <dataDir>/resources.json; with no lists there, from the
+// prebuilt ones packaged beside the browser (<its folder>/adblock), made when Thyris is built.
 class Adblock : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool ready READ ready NOTIFY listsChanged)
@@ -20,6 +21,9 @@ class Adblock : public QObject {
     Q_PROPERTY(bool updating READ updating NOTIFY updatingChanged)
     // tools/update-lists beside the build; only --check-engine sets another
     Q_PROPERTY(QString updateScript READ updateScript WRITE setUpdateScript NOTIFY updatingChanged)
+    // Update now has a script to run, and these lists are what blocks: not with uBlock Origin Lite, which blocks with its own,
+    // nor on an installed Tacit, whose lists come prebuilt with Thyris and which has no script or node (the owner, 2026-11-13)
+    Q_PROPERTY(bool canUpdate READ canUpdate NOTIFY updatingChanged)
 public:
     explicit Adblock(const QString &dataDir, QObject *parent = nullptr);
     ~Adblock() override;
@@ -49,6 +53,7 @@ public:
     QVariantList lists() const { return m_lists; }
     bool updating() const { return m_updating; }
     QString updateScript() const { return m_script; }
+    bool canUpdate() const;
     void setUpdateScript(const QString &path);
     // Runs the update script (Update now); once it has written the lists, the engine is built again from them off the
     // UI thread and takes over from the old one, and updated() answers.

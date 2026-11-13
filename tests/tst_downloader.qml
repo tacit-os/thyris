@@ -29,4 +29,18 @@ TestCase {
         downloader.act(two, "retry");
         compare(Disk.removed, [path + ".download"], "the first is coming: the part may be its");
     }
+
+    // what Ctrl+Q counts in its ask: the files coming, not one paused or done
+    function test_runningCountsWhatIsComing() {
+        const s = createTemporaryObject(sessionComponent, this);
+        const downloader = createTemporaryObject(downloaderComponent, this, { session: s });
+        const add = state => s.addDownload({ url: "https://example.org/" + state, file: state, path: Disk.downloads + "/" + state, state: state });
+        compare(downloader.running, 0);
+        verify(!downloader.coming);
+        add("running"); add("paused"); add("done");
+        compare(downloader.running, 1);
+        verify(downloader.coming);
+        add("running");
+        compare(downloader.running, 2);
+    }
 }

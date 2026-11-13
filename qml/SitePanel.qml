@@ -277,7 +277,7 @@ FocusScope {
                     id: rest
                     visible: !choiceRow.out
                     anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
-                    text: Site.value(choiceRow.row.key, choiceRow.picked)
+                    text: Site.value(choiceRow.row.key, choiceRow.picked, panel.info.inUse.indexOf(choiceRow.row.key) >= 0)
                     font.pixelSize: Theme.font.caption
                     color: Theme.colSubtext
                 }

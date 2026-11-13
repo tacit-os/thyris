@@ -84,7 +84,7 @@ FocusScope {
     Keys.onDownPressed: { keyed = true; choose(chosen + 1) }
     Keys.onReturnPressed: forward()
     Keys.onEnterPressed: forward()
-    Keys.onEscapePressed: { if (phase !== "bringing") picked("close") }
+    Keys.onEscapePressed: { if (phase !== "bringing") picked("close"); else if (!fileRoute) picked("background") }
     function forward() {
         if (phase === "arrive")
             picked(source && source.kind === "file" ? "file" : "bring");
@@ -559,12 +559,13 @@ FocusScope {
                 return "";
             }
         }
-        // a file's logins go in within seconds, and the keyring takes them one by one: nothing to stop there
+        // a file's logins go in within seconds, and the keyring takes them one by one: nothing to wait for there. A browser's
+        // import has no stop: it goes on with the page closed, and says what came in a notice (the owner, 2026-11-13)
         TextLink {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: welcome.phase === "bringing" && !welcome.fileRoute
-            text: "Stop, and keep what came over"
-            onPicked: welcome.picked("stop")
+            text: "Close: it keeps going in the background"
+            onPicked: welcome.picked("background")
         }
     }
 }

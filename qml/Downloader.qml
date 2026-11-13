@@ -23,7 +23,9 @@ QtObject {
     // the address the fetcher loads; "" while it has none (Main's fetcher exists only then)
     property string fetchUrl: ""
     // a file of this run still coming, not paused (the fetcher's too): quitting would cancel it (Main.lastWindowGone)
-    readonly property bool coming: { session.revision; return session.downloads.some(d => d.state === "running") }
+    readonly property bool coming: running > 0
+    // how many: Ctrl+Q asks first while there are any (Main.quitKey)
+    readonly property int running: { session.revision; return session.downloads.filter(d => d.state === "running").length }
     signal started(string id)           // a download that goes ahead (not a held one): Main's notice while folded
 
     // `pageId`: the page whose view started it ("" for none); `viewUrl`: that view's address (an attached

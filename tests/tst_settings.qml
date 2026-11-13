@@ -22,7 +22,7 @@ TestCase {
             languages: ["en-GB"], spellCheck: false, dictionaries: { "en-GB": "" }, allowed: ["https://lwn.net"], siteChoices: [],
             lists: [{ file: "ubo-filters", modified: new Date(2026, 8, 29, 6, 10).getTime(), version: "2026.928.1504" },
                     { file: "ubo-privacy", modified: 0, version: "1" }, { file: "easylist", modified: 0, version: "202609290512" }],
-            updating: false, listFailure: null, thirdPartyCookies: "allow", httpsFirst: "on", cookies: 3, clearing: null, extensions: [],
+            updating: false, canUpdate: true, listFailure: null, thirdPartyCookies: "allow", httpsFirst: "on", cookies: 3, clearing: null, extensions: [],
             passwords: { state: "ready", entries: [], removing: {}, revealed: {} },
             zen: { profile: null, state: "", wrong: false, logins: 0, run: null, last: null, failure: null },
             versions: { qt: "6.11.2", chromium: "134.0.6998.208", security: "134.0.6998.208" }, now: now,
@@ -147,6 +147,17 @@ TestCase {
         compare([done.label, done.value, done.action], ["Up to date", "today 17:59", ""], "an update just done says so, with no Update now");
         compare(Settings.now("adblock", state({ listUpdated: now - 60000 })), "Up to date");
         compare(row(Settings.rows(state({ listUpdated: now - 2 * 3600000 }), "", ""), "update").action, "Update now", "an hour on, it is offered again");
+    }
+
+    // uBlock Origin Lite blocks, or the lists came with Thyris and it has no update script: no Update now (the owner, 2026-11-13)
+    function test_noUpdateNowWhereItCannotRun() {
+        const hourOn = { listUpdated: now - 2 * 3600000 };
+        const r = row(Settings.rows(state(Object.assign({ canUpdate: false }, hourOn)), "", ""), "update");
+        compare([r.label, r.action], ["Updated", ""], "the lists' date, and no button");
+        compare(row(Settings.rows(state(hourOn), "", ""), "update").action, "Update now", "where it can run, as before");
+        const words = s => Settings.lead(Settings.foldOf("adblock"), state(Object.assign({ lists: [], passwords: { state: "none" } }, s)), false).map(p => p[0]).join("");
+        compare(words({ canUpdate: false }), "No ad lists yet.");
+        compare(words({}), "No ad lists yet: Update now fetches them.");
     }
 
     function test_choicesAndValues() {

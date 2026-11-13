@@ -1244,6 +1244,22 @@ QtObject {
         { name: "(the program there: Delete)", wait: 400, act: () => { const d = session.downloads.find(x => x.page === check.tlsPage); check.clickAction("d:" + d.id, "delete") },
           expect: () => !session.downloads.some(d => d.page === check.tlsPage) },
         { name: "(back on the downloads page)", wait: 800, act: () => { app.closeEarlier(false); app.show(check.dlPage) }, expect: () => session.currentPage === check.dlPage && !rail.inEarlier },
+        // Ctrl+Q with a file coming asks first, in the page (the owner, 2026-11-13); check mode counts a quit and goes on
+        { name: "(a file that takes 16 s, for Ctrl+Q)", wait: 800, focus: "location.href = '/file/quit.bin?size=400000&delay=40'",
+          act: () => check.quits = app.quits,
+          expect: () => { check.dl = check.lastDownload().id; return check.record().file === "quit.bin" && check.record().state === "running" } },
+        { name: "Ctrl+Q while it comes asks in the page first: 1 download running, Quit anyway or Wait; nothing quits", key: Qt.Key_Q, mods: ctrl, wait: 800,
+          expect: () => { const words = check.drawn(app.askSheet);
+              probe.report("     " + words.join(" | "));
+              return !!view.ask && view.ask.kind === "quit" && words.indexOf("1 download running") >= 0 && words.indexOf("Quit anyway") >= 0
+                  && words.indexOf("Wait") >= 0 && app.quits === check.quits && check.record().state === "running" } },
+        { name: "Wait: the ask goes, the file still coming, nothing quit", wait: 600, act: () => view.answer(view.ask, "wait"),
+          expect: () => !view.ask && app.quits === check.quits && check.record().state === "running" },
+        { name: "Ctrl+Q again, then Quit anyway: Thyris quits (counted in check mode)", key: Qt.Key_Q, mods: ctrl, wait: 1500,
+          act: () => check.later(() => { if (view.ask && view.ask.kind === "quit") view.answer(view.ask, "quit") }),
+          expect: () => app.quits === check.quits + 1 && !view.ask },
+        { name: "(that file cancelled; the run marked running again)", wait: 800, act: () => { downloads.act(check.dl, "cancel"); app.writeRun({}) },
+          expect: () => !check.record() || check.record().state !== "running" },
         { name: "(a file that takes 16 s)", wait: 800, focus: "location.href = '/file/slow.bin?size=400000&delay=40'",
           expect: () => { check.dl = check.lastDownload().id; return check.record().state === "running" && session.pages[check.dlPage].downloading } },
         { name: "a page whose file is still coming is not the memory net's pick, though seen longest ago", wait: 1000,
@@ -1363,6 +1379,28 @@ QtObject {
           act: () => { probe.press(Qt.Key_Escape, 0); probe.press(Qt.Key_Escape, 0) },
           expect: () => !site.open && view.ask && check.sheetOut() },
         { name: "(F6, Esc: denied)", wait: 500, act: () => { probe.press(Qt.Key_F6, 0); probe.press(Qt.Key_Escape, 0) }, expect: () => !view.ask },
+        // a Block ends no call: the row says when it applies (owner, 2026-11-13), and nothing reloads the page
+        { name: "(a reload; the microphone asked for)", wait: 1500, act: () => view.reload(),
+          expect: () => view.title === "asks" && !view.loading && !view.ask },
+        { name: "(asked)", wait: 800,
+          focus: "navigator.mediaDevices.getUserMedia({ audio: true }).then(s => { window.s = s; log.push('mic ok') }, e => log.push('mic ' + e.name))",
+          expect: () => view.ask && view.ask.types.join() === "microphone" },
+        { name: "(Allow once: it records)", wait: 800, act: () => { probe.press(Qt.Key_F6, 0); probe.press(Qt.Key_Return, 0) },
+          expect: () => !view.ask && view.inUse.join() === "microphone", page: "s.getTracks()[0].readyState", pageExpect: v => v === "live" },
+        { name: "(Ctrl+I; the microphone's value)", focus: "document.activeElement.blur()", key: Qt.Key_I, mods: ctrl, wait: 500,
+          act: () => check.later(() => check.clickSite("site:microphone")), expect: () => site.expand === "microphone" },
+        { name: "Block while it records: the row reads Blocked after a reload, the page is not reloaded and records on", wait: 600,
+          act: () => check.clickSite("site:microphone=block"),
+          expect: () => { const words = check.drawn(rail.sitePanel);
+              probe.report("     " + words.join(" | "));
+              return site.choice("microphone") === "block" && words.indexOf("Blocked after a reload") >= 0 && view.inUse.join() === "microphone" && !view.loading },
+          page: "s.getTracks()[0].readyState", pageExpect: v => v === "live" },
+        { name: "a reload ends the recording, and the row reads Blocked", wait: 1500, act: () => view.reload(),
+          expect: () => { const words = check.drawn(rail.sitePanel);
+              probe.report("     open " + site.open + ": " + words.join(" | "));
+              return view.title === "asks" && !view.loading && view.inUse.length === 0 && (!site.open || words.indexOf("Blocked") >= 0 && words.indexOf("Blocked after a reload") < 0) } },
+        { name: "(the microphone back to Ask, the panel closed)", wait: 400, act: () => { site.set("microphone", ""); site.hide(); app.focusPage() },
+          expect: () => site.choice("microphone") === "" && !site.open },
         { name: "(the site's page)", wait: 1500, act: () => app.go(check.local("/site"), "navigate"), expect: () => view.title === "site" },
         { name: "(Ctrl+I)", focus: "document.activeElement.blur()", key: Qt.Key_I, mods: ctrl, wait: 500, expect: () => site.open },
         { name: "+ zooms the site to 110 %: the page, and the value at the card's right", wait: 600, act: () => check.clickSite("site:zoom-in"),
@@ -2727,6 +2765,9 @@ QtObject {
               return !app.profile.spellCheckEnabled && app.profile.httpAcceptLanguage === app.engineLanguages && check.ownRow("languages").value === check.langsBefore.replace(/,/g, ", ") } },
         { name: "no Memory section: no freeze or unload times, no Keep loaded sites", wait: 300,
           expect: () => app.ownKind === "settings" && ["head:memory", "freeze", "unload", "keep"].every(k => !check.ownRow(k)) },
+        { name: "no Update now with no update script to run, as on an installed Tacit, whose lists come with Thyris", wait: 500,
+          act: () => { check.own().openView(""); app.adblock.updateScript = "/nonexistent/update-lists" },
+          expect: () => !app.adblock.canUpdate && !!check.ownRow("update") && check.ownRow("update").action === "" },
         { name: "Update now failing (the check's script, as curl says it): the failure in words under Last update failed, kept in settings.json", wait: 2500,
           act: () => { check.own().openView("");
               app.adblock.updateScript = probe.fixtureFile("update-fail.sh", "echo 'curl: (6) Could not resolve host: easylist.to' >&2\nexit 6\n");
@@ -3935,6 +3976,19 @@ QtObject {
                   && r.figures[0].place === "Passwords" && probe.keyringHolds("https://w.cr.test", check.cr.user5, check.cr.pass5) } },
         { name: "Enter there makes Thyris the default browser, and Welcome goes", key: Qt.Key_Return, wait: 1200,
           expect: () => !app.welcome.visible && /^xdg-mime default (browser|opsis-new-engine)\.desktop x-scheme-handler\/http/.test(Apps.lastDefaulted) },
+        // closed while it brings (the owner, 2026-11-13): it goes on, and says what came in a notice, not by coming back
+        { name: "(Welcome again)", wait: 1000, act: () => app.openWelcome(), expect: () => app.welcome.visible && app.welcome.phase === "arrive" },
+        { name: "Chrome Work brought, Welcome closed by its link at once: the page goes and the import goes on", wait: 100,
+          act: () => { app.cardNotice = null; app.bringOver(app.welcome.sources[2]); app.welcome.picked("background") },
+          expect: () => !app.welcome.visible && (app.browserRun !== null ? app.browserRun.from === "Chrome · Work" : app.cardNotice !== null) },
+        { name: "done, it stays closed: the card's notice says Brought over from Chrome, with Show", wait: 5000,
+          expect: () => { const n = app.cardNotice;
+              probe.report("     " + JSON.stringify(n && { text: n.text, action: n.action }) + "; welcome " + app.welcome.visible + " " + app.welcome.phase);
+              return app.browserRun === null && !app.welcome.visible && !!n && n.text === "Brought over from Chrome" && n.action === "Show" } },
+        { name: "Show opens what came, as done says it", wait: 800, act: () => app.runNotice(),
+          expect: () => app.welcome.visible && app.welcome.phase === "done" && !!app.welcome.result && app.welcome.result.from === "Chrome · Work"
+              && app.cardNotice === null },
+        { name: "(Esc closes it)", key: Qt.Key_Escape, wait: 600, expect: () => !app.welcome.visible },
         { name: "no password of these profiles in a file of the throwaway data dir (theirs and the keyring's aside) or in this run's output", wait: 500,
           act: () => app.saveAll(),
           expect: () => {

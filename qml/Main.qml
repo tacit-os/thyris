@@ -2015,6 +2015,7 @@ Window {
             v.processStopped.connect((status, code) => root.pageStopped(v, status, code, v === root.currentView && !v.parked));
             v.saveWanted.connect(a => root.saveToMain(a));
             v.reopenWanted.connect(() => root.reopenNow());
+            v.quitWanted.connect(() => root.hub.quitAll());
             v.loginFailed.connect(text => root.showNotice({ text: text, action: "", where: "card" }, 4000));
             // window.print() of the page on screen: the print card, as Ctrl+P
             v.printWanted.connect(() => { if (v === root.currentView && !v.parked) root.openPrint() });
@@ -3077,7 +3078,7 @@ Window {
         case "lastPage": if (order.length > 0) show(order[order.length - 1]); return true;
         case "address": addressKey(); return true;
         case "focusCycle": focusCycle(); return true;
-        case "quit": hub.quitAll(); return true;
+        case "quit": quitKey(); return true;
         case "fullScreen": toggleFullScreen(); return true;
         case "back": if (v) back(v); return !!v;
         case "forward": if (v) v.goForward(); return !!v;
@@ -3207,7 +3208,7 @@ Window {
                 else
                     root.openOwn("settings", action === "open:Passwords" ? "passwords" : "import");
             } else if (action !== "show") {
-                // close, keep, later, fresh: nothing held stays in memory
+                // close, keep, later, fresh, background (a browser's import goes on: finishBrowser): nothing held stays in memory
                 if (PasswordFile.state === "read")
                     PasswordFile.forget();
                 root.closeWelcome();
@@ -3418,10 +3419,16 @@ Window {
             fig(tabs, "open tabs", "the rail");
         }
         const c = run.cookies ?? {};
-        welcomePage.result = { from: run.from, sitesCame: (c.added ?? 0) + (c.kept ?? 0) > 0 ? (c.sites ?? 0) : 0, google: c.google === true,
-                               tabsCame: tabs, figures: figures, stayed: run.stayed };
-        welcomePage.phase = "done";
+        const result = { from: run.from, sitesCame: (c.added ?? 0) + (c.kept ?? 0) > 0 ? (c.sites ?? 0) : 0, google: c.google === true,
+                         tabsCame: tabs, figures: figures, stayed: run.stayed };
         root.prefs.set("broughtOver", Date.now());
+        const done = () => { welcomePage.mode = ""; welcomePage.result = result; welcomePage.phase = "done" };
+        // closed while it ran (Welcome's background link or Esc): a notice says so, and the page comes back only on its
+        // Show, never by itself over what you went on to (the owner, 2026-11-13)
+        if (welcomePage.phase === "bringing" && welcomePage.mode === "")
+            done();
+        else
+            root.showNotice({ text: "Brought over from " + run.browser, action: "Show", run: done, where: "card" }, 8000);
     }
 
     // A browser's open tabs as pages (unloaded, so none loads) in a thread of their own, "From Zen" (with Zen's workspace or
@@ -4316,6 +4323,19 @@ Window {
         if (!w || w.noPage || !w.currentView)
             return;
         WebStore.updateAsks().forEach(u => w.currentView.askUpdate(u));
+    }
+    // Ctrl+Q with files still coming, which quitting would cancel, the private windows' too: the page on screen asks
+    // first, "1 download running", Quit anyway or Wait (the owner, 2026-11-13); with no page the card's notice offers
+    // Quit anyway
+    function quitKey() {
+        const coming = [hub].concat(hub.privateWindows).reduce((n, w) => n + w.downloadModel.running, 0);
+        const v = noPage ? null : currentView;
+        if (coming === 0)
+            hub.quitAll();
+        else if (v)
+            v.askQuit(coming);
+        else
+            showNotice({ text: Asks.running(coming), action: "Quit anyway", run: () => root.hub.quitAll(), where: "card" }, 6000);
     }
     // Ctrl+Q, or the last main window closing: every window stays as it is for the next start. Where each window is
     // is asked of Hyprland first, for restore (Backdrop answers within 500 ms). Check mode counts the quit instead,

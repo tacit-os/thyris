@@ -288,13 +288,17 @@ static void *buildEngine(const QString &dataDir, QVariantList *lists, bool build
 
 Adblock::Adblock(const QString &dataDir, QObject *parent) : QObject(parent), m_dataDir(dataDir) {
     m_script = QCoreApplication::applicationDirPath() + QStringLiteral("/../tools/update-lists");
+    // the lists an update wrote, else the prebuilt ones packaged beside the browser
+    const QString shipped = QCoreApplication::applicationDirPath() + QStringLiteral("/adblock");
+    const bool own = !QDir(dataDir + QStringLiteral("/lists")).entryList({QStringLiteral("*.txt")}, QDir::Files).isEmpty();
+    const QString from = own || !QFileInfo::exists(shipped + QStringLiteral("/lists")) ? dataDir : shipped;
     // with uBlock Origin Lite blocking no request asks the engine (requestFilter unset), but YouTube's pages still take its
     // cosmetics (cosmetic()): it is built off the UI thread then, so the window does not wait for it, and only where there are lists
-    m_engine = buildEngine(dataDir, &m_lists, !extensionBlocks);
+    m_engine = buildEngine(from, &m_lists, !extensionBlocks);
     if (extensionBlocks && !m_lists.isEmpty())
-        m_builder = std::thread([this, dataDir] {
+        m_builder = std::thread([this, from] {
             QVariantList lists;
-            void *engine = buildEngine(dataDir, &lists);
+            void *engine = buildEngine(from, &lists);
             QMetaObject::invokeMethod(this, [this, engine] {
                 EngineLock lock;
                 void *old = m_engine;
@@ -313,6 +317,10 @@ Adblock::~Adblock() {
     for (AdblockInterceptor *interceptor : std::as_const(m_interceptors))
         interceptor->setEngine(nullptr);
     ab_drop(m_engine);
+}
+
+bool Adblock::canUpdate() const {
+    return !extensionBlocks && !QFileInfo(m_script).canonicalFilePath().isEmpty();
 }
 
 void Adblock::setUpdateScript(const QString &path) {

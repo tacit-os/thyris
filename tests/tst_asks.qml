@@ -237,4 +237,17 @@ TestCase {
         compare(Asks.word(Object.assign({}, base, { state: "ask" })), "add?");
         verify(Asks.order([base, { id: 2, kind: "claude" }])[0].kind === "claude", "Claude needs you comes before an extension ask");
     }
+
+    // Ctrl+Q with files coming (Main.quitKey): the owner's words, 2026-11-13
+    function test_quitWithFilesComingAsksFirst() {
+        const one = { id: 3, kind: "quit", count: 1, origin: "", host: "Thyris" };
+        const v = Asks.view(one, "");
+        compare(v.lines.map(l => l.text), ["1 download running"], "the count in the words");
+        compare(v.buttons.map(b => b.label + ":" + b.choice).join(), "Quit anyway:quit,Wait:wait");
+        compare(v.negative, "wait", "Esc waits");
+        compare(Asks.view(Object.assign({}, one, { count: 3 }), "").lines[0].text, "3 downloads running");
+        compare(Asks.order([{ id: 1, kind: "leave" }, permission(2, "https://a.test", ["camera"]), one])[0].kind, "quit",
+                "it shows before what the page asked, as it answers the key just pressed");
+        compare(Asks.word(one), "quit?");
+    }
 }

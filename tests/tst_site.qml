@@ -38,6 +38,7 @@ TestCase {
             // this page load's answers the panel's choices replaced
             property var forgot: []
             function forgetAnswer(origin, type) { forgot = forgot.concat([origin + " " + type]) }
+            property var inUse: []
         }
     }
 
@@ -67,6 +68,9 @@ TestCase {
         compare(Site.value("microphone", ""), "Ask");
         compare(Site.value("notifications", "block"), "Blocked");
         compare(Site.value("camera", "allow"), "Allowed");
+        compare(Site.value("camera", "block", true), "Blocked after a reload", "a call running: the Block ends nothing it has open");
+        compare(Site.value("camera", "allow", true), "Allowed");
+        compare(Site.value("microphone", "", true), "Ask");
         compare(Site.choices("screen").map(c => c.label), ["Ask", "Block"], "the screen-share ask is its picker: no lasting Allow");
         compare(Site.value("ads", ""), "Blocked", "ads and trackers are blocked unless allowed");
         compare(Site.value("ads", "allow"), "Allowed");
@@ -188,6 +192,9 @@ TestCase {
         compare(t.info.expand, "", "a pick folds the choices");
         compare(t.view.forgot, ["https://www.youtube.com microphone"], "this load's Allow once or Deny gives way to the choice");
         compare(t.other.forgot, ["https://www.youtube.com microphone"], "on every page of the site");
+        compare(t.info.inUse, [], "nothing open");
+        t.view.inUse = ["microphone"];
+        compare(t.info.inUse, ["microphone"], "the microphone the page has open, whose row then says when the Block applies");
         t.info.set("ads", "allow");
         compare(t.view.reloads, 1, "Ads and trackers reloads the page, which starts its count again");
         t.info.set("sound", "block");

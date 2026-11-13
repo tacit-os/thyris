@@ -835,7 +835,7 @@ WebEngineView {
         // (a redirect, a script's location), and goes with a load of yours: a link, an address, back or a reload
         const T = WebEngineNavigationRequest;
         const keepsLogin = navigationType === T.FormSubmittedNavigation || navigationType === T.OtherNavigation;
-        const kept = a => a.kind === "leave" || a.kind === "password" && keepsLogin || a.kind === "extension" && a.state === "added";
+        const kept = a => a.kind === "leave" || a.kind === "password" && keepsLogin || a.kind === "extension" && a.state === "added" || a.kind === "quit";
         keptLoad = { thisLoad: thisLoad, asks: asks.filter(a => !kept(a)), pendingApps: pendingApps, pickedFiles: pickedFiles,
                      dialogs: dialogs, dialogsBlocked: dialogsBlocked, blockedPopups: blockedPopups, answered: reset ? [] : answered,
                      reader: reader, article: article, articleAt: articleAt, editedKept: editedKept };
@@ -988,6 +988,15 @@ WebEngineView {
         return false;
     }
     signal reopenWanted()
+    // Ctrl+Q while files are coming (Main.quitKey): one ask, its count the latest
+    function askQuit(count) {
+        const a = asks.find(x => x.kind === "quit");
+        if (a)
+            replace(a, Object.assign({}, a, { count: count }));
+        else
+            enqueue({ kind: "quit", count: count, origin: "", host: "Thyris" });
+    }
+    signal quitWanted()
     function replace(a, b) { asks = asks.map(x => x === a ? b : x) }
     // the bell at the card's right: the quiet ask comes out
     function unquiet() {
@@ -1109,6 +1118,10 @@ WebEngineView {
         case "extension":
             if (answerExtension(a, choice))
                 return;
+            break;
+        case "quit":
+            if (choice === "quit")
+                view.quitWanted();
             break;
         case "password":
             if (choice === "save")

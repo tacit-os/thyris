@@ -42,6 +42,8 @@ QtObject {
     // Reader view (PLAN.md 3.9): whether the page has an article, as the page last said, and whether it shows it
     readonly property string article: view ? view.article ?? "" : ""
     readonly property bool reading: view ? view.reader === true : false
+    // what the page has open now (BrowserView.inUse: camera, microphone, location, screen), which a Block leaves running
+    readonly property var inUse: view ? view.inUse ?? [] : []
     readonly property var rows: Site.rows({ view: sub, clearing: clearingHere, mixed: seen.insecureImages && /^https:/i.test(url), blocker: blocker,
                                             ads: choice("ads"), types: Site.permissionTypes(entry, sub === "all", [expand]), tls: tls, waiting: waiting })
     function choice(type) { sites.revision; return sites.choice(origin, type) }
