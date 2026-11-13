@@ -1,9 +1,13 @@
 -- Hyprland rules for ~/dev/browser's own windows (PLAN.md 3.17). Nothing loads this file by itself: it is linked
 -- as ~/.config/hypr/custom/browser.lua and required after custom.rules in ~/.config/hypr/hyprland.lua
--- (safe_require("custom.browser")). The main window's rule (class browser, opacity 0.85 0.77) stays in custom/rules.lua.
+-- (safe_require("custom.browser")). The Qt WebEngine build's main window (class browser, opacity 0.85 0.77) has its rule
+-- in the session's rules.lua.
 
--- The private window (PLAN.md 3.14) is a main window, class browser: the main window's rule applies and no rule of its
--- own is needed, as nothing about its colour or glass differs.
+-- The CEF build's main window is class browser-cef (src/main.cpp), which that rule misses: Hyprland matches a class
+-- whole. The same glass here, scaled as the session scales it for a bright wallpaper (tacit_glass, hyprland.lua). The
+-- private window (PLAN.md 3.14) is a main window of the same class: nothing about its colour or glass differs.
+local glass = tacit_glass or function(o) return o end
+hl.window_rule({ match = { class = "^(browser-cef)$" }, opacity = string.format("%.3f %.3f", glass(0.85), glass(0.77)) })
 
 -- A sign-in popup in the notch (~/book4-edge/signin-notch-plan.md): its page alone, under the app_id browser-signin,
 -- shown once the notch's sheet has settled, into the hole the shell leaves for it. It floats pinned (the notch is on
