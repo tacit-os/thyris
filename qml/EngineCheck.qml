@@ -1321,7 +1321,34 @@ QtObject {
           focus: "location.href = '/file/notice.bin?size=100000&delay=10'", act: () => probe.pointer(700, 400),
           expect: () => /^Downloading notice\.bin · \d+ %$/.test(app.downloadNotice) },
         { name: "the notice goes after 3 s", wait: 2600, expect: () => app.downloadNotice === "" },
-        { name: "(Ctrl+B pins again)", focus: "document.activeElement.blur()", key: Qt.Key_B, mods: ctrl, wait: 1200, expect: () => app.railPinned },
+        // landed or failed out of sight, a file is the shell's notification to say (the owner, 2026-11-13); Apps records it
+        { name: "folded, the file that landed is said by a notification: its name, Downloaded and its size, Open and Show in Files", wait: 300,
+          expect: () => { const n = Apps.lastNotice, d = check.lastDownload(); check.dl = d.id; probe.report("     " + JSON.stringify(n));
+              return d.file === "notice.bin" && d.state === "done" && n.key === d.id && n.summary === "notice.bin" && n.body === "Downloaded · 100 kB"
+                  && n.actions.join("|") === "open|Open|show|Show in Files" && !n.resident && !n.transient } },
+        { name: "its Show in Files hands the file to Files (a dry run)", wait: 300, act: () => Apps.noticeAction(check.dl, "show"),
+          expect: () => Apps.lastRevealed === check.record().path },
+        { name: "its Open opens it in its app (a dry run)", wait: 300, act: () => Apps.noticeAction(check.dl, "open"),
+          expect: () => Apps.lastOpened === check.record().path && check.record().opened > 0 },
+        { name: "folded, a file that fails: its notification says why, with Try again, and stays until it is dealt with", wait: 2000,
+          act: () => probe.allowResume(false), focus: "location.href = '/file/notice-cut.bin?size=100000&delay=5&cut=20000'",
+          expect: () => { const n = Apps.lastNotice; check.dl = check.lastDownload().id; probe.report("     " + JSON.stringify(n));
+              return check.record().state === "failed" && n.key === check.dl && n.summary === "notice-cut.bin" && n.body === "Failed · The site stopped sending it."
+                  && n.actions.join("|") === "retry|Try again" && n.resident } },
+        { name: "its Try again, the server taking the resume: that notification goes, and the file lands, said in its place", wait: 1500,
+          act: () => { probe.allowResume(true); Apps.noticeAction(check.dl, "retry") },
+          expect: () => Apps.lastWithdrawn === check.dl && check.record().state === "done" && Apps.lastNotice.key === check.dl
+              && Apps.lastNotice.body === "Downloaded · 100 kB" },
+        { name: "(Ctrl+B pins again)", focus: "document.activeElement.blur()", key: Qt.Key_B, mods: ctrl, wait: 1200,
+          act: () => check.notices = Apps.lastNotice.count, expect: () => app.railPinned },
+        { name: "pinned and in front, a file that lands is not announced: its row says it", wait: 1200, act: () => probe.back(app),
+          focus: "location.href = '/file/seen.bin?size=5000'",
+          expect: () => check.lastDownload().file === "seen.bin" && check.lastDownload().state === "done" && Apps.lastNotice.count === check.notices },
+        { name: "pinned with another app in front, one that lands is", wait: 1500, act: () => probe.away(),
+          focus: "location.href = '/file/away.bin?size=20000&delay=20'",
+          expect: () => check.lastDownload().file === "away.bin" && check.lastDownload().state === "done" && Apps.lastNotice.count === check.notices + 1
+              && Apps.lastNotice.summary === "away.bin" },
+        { name: "(back in front)", wait: 300, act: () => probe.back(app), expect: () => app.active },
         // progress reaches the rail from Downloader's 500 ms tick, one rebuild for every file coming
         { name: "(three files that take 4 s)", wait: 800,
           focus: "for (const n of ['a.bin', 'b.bin', 'c.bin']) { const a = document.createElement('a'); a.href = '/file/tick-' + n + '?size=100000&delay=40'; a.download = 'tick-' + n; document.body.appendChild(a); a.click() }",
@@ -1599,7 +1626,43 @@ QtObject {
         { name: "and the next link reaches it", wait: 3000,
           act: () => probe.launch(["--from", "foot", check.served("again", "/plain")]),
           expect: () => check.launchedOk() && session.current.url === check.served("again", "/plain") && session.current.from === "foot" },
+        // A browser that has not taken a link in 20 s (as long as Chromium waits) is asked about in the notch, "Thyris isn't
+        // answering" with Wait and Close it, and ended only by Close it (the owner, 2026-11-13). This browser holds the
+        // link unanswered (Instance.holding); the shell is a stand-in on the start's PATH (standInShell).
+        { name: "(this browser busy: links read and left unanswered; a stand-in shell for the next start)", wait: 300,
+          act: () => { check.shellDir = probe.fixtureDir("standin"); probe.fixtureFile("standin/qs", check.standInShell, true); app.instance.holding = true },
+          expect: () => check.shellDir !== "" && app.instance.holding },
+        { name: "a link handed over while it is busy waits: after 10 s nothing is ended and nothing asked", wait: 10000,
+          act: () => probe.launch(["--from", "foot", check.served("held", "/plain")], { PATH: check.shellDir + ":" + probe.env("PATH") }, false, "", 90000),
+          expect: () => { probe.report("     " + JSON.stringify(probe.launched()));
+              return probe.launched().code === -1 && check.asked().length === 0 } },
+        { name: "at 20 s it asks in the notch about this browser's process: Thyris isn't answering, Close it or Wait", wait: 11500,
+          expect: () => { const a = check.asked(); probe.report("     " + probe.fixtureText("standin/qs.log").trim().split("\n").join(" / "));
+              return probe.launched().code === -1 && a.length === 1 && a[0].pid === probe.pid() && a[0].cls === "thyris" && a[0].buttons.join("|") === "close|wait" } },
+        { name: "answered Wait: nothing is ended, and it asks again 20 s later", wait: 21500,
+          expect: () => probe.launched().code === -1 && /^answered wait$/m.test(probe.fixtureText("standin/qs.log")) && check.asked().length === 2 },
+        { name: "once this browser answers, the link opens, the prompt leaves the notch and the start exits 0", wait: 2000,
+          act: () => app.instance.holding = false,
+          expect: () => check.launchedOk() && session.current.url === check.served("held", "/plain") && session.current.from === "foot"
+              && probe.fixtureText("standin/qs.log").indexOf(" notAnsweringGone " + check.asked()[0].id) >= 0 },
     ]
+    // The shell for the instance group's busy browser: each `qs ... ipc call island <function> <argument>` is a line of
+    // qs.log beside it; a not-answering prompt is shown, and the first one answered Wait a second later, as a person would
+    readonly property string standInShell: "#!/bin/sh\n"
+        + "log=$(dirname \"$0\")/qs.log\n"
+        + "printf '%s\\n' \"$*\" >> \"$log\"\n"
+        + "case \"$*\" in *' notAnswering '*)\n"
+        + "    if [ \"$(grep -c ' notAnswering ' \"$log\")\" = 1 ]; then\n"
+        + "        fifo=$(printf '%s\\n' \"$*\" | sed 's/.*\"fifo\":\"\\([^\"]*\\)\".*/\\1/')\n"
+        + "        (sleep 1; printf 'wait\\n' > \"$fifo\"; echo 'answered wait' >> \"$log\") >/dev/null 2>&1 &\n"
+        + "    fi\n"
+        + "    echo shown ;;\n"
+        + "esac\n"
+    property string shellDir: ""
+    // the prompts the stand-in shell was asked for, oldest first
+    function asked() {
+        return probe.fixtureText("standin/qs.log").split("\n").filter(l => l.indexOf(" notAnswering {") >= 0).map(l => JSON.parse(l.slice(l.indexOf("{"))));
+    }
     property int pageCount: 0
     property bool stale: false
     property int started: -1
@@ -2321,10 +2384,10 @@ QtObject {
           expect: () => probe.launched().code === -1 && Object.keys(session.pages).length === check.pageCount },
         { name: "it hands the link to the browser that listens next (this one again here) and exits 0", wait: 1500, act: () => app.instance.start(),
           expect: () => check.launchedOk() && session.current.url === check.served("waiting", "/plain") && session.current.from === "foot" },
-        { name: "a browser busy past the 5 s its answer is waited for: `browser` exits 0, saying the link opens when it answers", wait: 1500,
+        { name: "a browser busy for 6.5 s: its `browser` waits for the answer (up to 20 s, the notch asks then) and exits 0 once it has it", wait: 1500,
           act: () => { check.pageCount = Object.keys(session.pages).length; probe.launch(["--from", "foot", check.served("busy", "/plain")]);
                        for (const until = Date.now() + 6500; Date.now() < until;) {} },
-          expect: () => check.launchedOk() && /has not answered yet; it opens the link when it does/.test(probe.launched().output) },
+          expect: () => check.launchedOk() && !/has not answered yet/.test(probe.launched().output) },
         { name: "and the link opens once the browser runs again, once", expect: () => session.current.url === check.served("busy", "/plain")
               && Object.keys(session.pages).length === check.pageCount + 1 },
         // Remove from Always (PLAN.md 3.12, 3.17) while another window shows the cell's page
@@ -5383,6 +5446,22 @@ QtObject {
         { name: "Ctrl+M again: the tone is heard again", focus: "document.activeElement.blur()", key: Qt.Key_M, mods: ctrl,
           wait: 1000, expect: () => !view.audioMuted && check.hears(true) },
         { name: "(the tone stopped)", wait: 300, act: () => view.runJavaScript("stop()"), expect: () => true },
+        // the playing mark on CEF: each live page is asked every 2 s whether an audio or video element of it plays (the
+        // shim's recentlyAudible), which leaves the sound alone
+        { name: "(a page with an audio element that plays when clicked)", wait: 1500, act: () => app.go(check.local("/media"), "navigate"),
+          expect: () => view.title === "media" && !view.recentlyAudible },
+        { name: "a click plays it: within the 2 s check the page is playing, its row says so (and mutes on a click), and the speaker still hears it",
+          wait: 3500, act: () => check.click(),
+          expect: () => { const r = check.rowOf("p:" + session.currentPage);
+              probe.report("     recentlyAudible " + view.recentlyAudible + ", audible " + session.current.audible + ", word " + (r ? r.word : "no row"));
+              return view.recentlyAudible && session.current.audible && !!r && r.word === "playing" && check.hears(true) },
+          page: "String(!a.paused)", pageExpect: v => v === "true" },
+        { name: "Ctrl+M mutes it: its row says muted, the speaker hears nothing", focus: "document.activeElement.blur()", key: Qt.Key_M, mods: ctrl,
+          wait: 1000, expect: () => view.audioMuted && check.rowOf("p:" + session.currentPage).word === "muted" && check.hears(false) },
+        { name: "Ctrl+M again: playing again, and heard", focus: "document.activeElement.blur()", key: Qt.Key_M, mods: ctrl,
+          wait: 1000, expect: () => !view.audioMuted && check.rowOf("p:" + session.currentPage).word === "playing" && check.hears(true) },
+        { name: "paused: the mark goes within the 2 s check", wait: 3000, act: () => view.runJavaScript("a.pause()"),
+          expect: () => !view.recentlyAudible && !session.current.audible && check.rowOf("p:" + session.currentPage).word !== "playing" },
     ]
     // The sound group: whether Thyris's sound reaches the check's speaker now. Heard: a playback stream opened by Thyris
     // (its audio service is a process under it), neither muted nor corked, and the speaker's loudest sample over 0.05
@@ -5401,6 +5480,14 @@ QtObject {
         + " o.frequency.value = 440; g.gain.value = 0.5; o.connect(g).connect(ctx.destination); o.start();"
         + " ctx.resume().then(() => playing = ctx.state === 'running') };"
         + "window.stop = () => { if (ctx) ctx.close(); playing = false };</script>"
+    // a page whose audio element `a` loops a 440 Hz tone at half scale (a WAV made in the page) from a click anywhere on it
+    readonly property string mediaPage: "<!doctype html><title>media</title>"
+        + "<button style='position:fixed;left:0;top:0;width:100%;height:100%' onclick='a.play()'>play</button><script>"
+        + "const rate = 8000, b = new DataView(new ArrayBuffer(44 + 2 * rate)), w = (at, t) => [...t].forEach((c, i) => b.setUint8(at + i, c.charCodeAt(0)));"
+        + "w(0, 'RIFF'); b.setUint32(4, 36 + 2 * rate, true); w(8, 'WAVEfmt '); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);"
+        + "b.setUint32(24, rate, true); b.setUint32(28, 2 * rate, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); w(36, 'data'); b.setUint32(40, 2 * rate, true);"
+        + "for (let i = 0; i < rate; i++) b.setInt16(44 + 2 * i, Math.round(16383 * Math.sin(2 * Math.PI * 440 * i / rate)), true);"
+        + "window.a = new Audio(URL.createObjectURL(new Blob([b], { type: 'audio/wav' }))); a.loop = true; document.body.appendChild(a);</script>"
     // Fixture for the asks: a button over the page's top-left that runs `act`, and what each ask calls;
     // `log` keeps the page's answers.
     readonly property string asksPage: "<!doctype html><title>asks</title>"
@@ -5494,6 +5581,7 @@ QtObject {
     property string tlsPage: ""
     property string path: ""
     property real bytes: 0
+    property int notices: 0
     function lastDownload() { return session.downloads[session.downloads.length - 1] ?? null }
     function record() { return session.downloadById(check.dl) }
     function rowOf(key) {
@@ -5600,7 +5688,7 @@ QtObject {
             "/login": "<title>login</title><form><input id=user><input id=pw type=password></form>",
             "/asks": check.asksPage, "/auth": { body: "<title>signed in</title>", auth: "admin:secret" },
             "/leave": "<title>leave</title><input id=f><script>onbeforeunload = e => { e.preventDefault(); e.returnValue = '' }</script>",
-            "/dialogs": check.fixturePage("dialogs", ""), "/upload": check.uploadPage, "/full": check.fullPage, "/tone": check.tonePage,
+            "/dialogs": check.fixturePage("dialogs", ""), "/upload": check.uploadPage, "/full": check.fullPage, "/tone": check.tonePage, "/media": check.mediaPage,
             "/drop":"<!doctype html><title>drop</title><div id=zone style='position:fixed;left:0;top:0;width:400px;height:300px'>zone</div>"
                 + "<script>window.log = []; zone.ondragover = e => e.preventDefault();"
                 + "zone.ondrop = e => { e.preventDefault(); log.push('zone ' + [...e.dataTransfer.files].map(f => f.name).join('+')) }</script>",

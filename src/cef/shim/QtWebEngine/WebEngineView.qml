@@ -59,9 +59,6 @@ PageItem {
     property int webChannelWorld: 0                         // always Opsis's world on CEF
 
     property int recommendedState: 0
-    // CEF says a page is playing only through CefAudioHandler, which takes the sound off the speakers (its loopback
-    // stream mutes the source), so the playing mark is not shown on CEF
-    property bool recentlyAudible: false
 
     // Qt's error pages switch (BrowserView turns it off for an https attempt, so the attempt leaves no history entry)
     Connections {
@@ -70,6 +67,19 @@ PageItem {
     }
     // scripts off as the view is made (the Retry fetcher's): Chromium takes it when the page is made, after this
     Component.onCompleted: if (!settings.javascriptEnabled) setScripts(false)
+    // CEF says a page is playing only through CefAudioHandler, which takes the sound off the speakers (its loopback
+    // stream mutes the source), so a live page is asked every 2 s instead (the owner, 2026-11-13): a video or audio
+    // element of its document playing with its sound on, Lifecycle.playing's test (not one inside another site's frame,
+    // nor Web Audio). The browser's mute (audioMuted) is not the page's own, so a page muted so still reads as playing.
+    property bool recentlyAudible: false
+    Timer {
+        interval: 2000
+        repeat: true
+        running: lifecycleState === 0 && !unresponsive && String(url) !== ""
+        onRunningChanged: if (!running) recentlyAudible = false
+        onTriggered: runJavaScript("[...document.querySelectorAll('video, audio')].some(m => !m.paused && !m.ended && !m.muted && m.volume > 0)",
+                                   WebEngineScript.ApplicationWorld, playing => recentlyAudible = playing === true)
+    }
     signal selectClientCertificate(var selection)
     signal desktopMediaRequested(var request)
     // A screen share (PageItem.desktopCaptureRequested) as Qt's desktop media request. Chromium lists no screens or

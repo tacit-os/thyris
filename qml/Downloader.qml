@@ -27,6 +27,7 @@ QtObject {
     // how many: Ctrl+Q asks first while there are any (Main.quitKey)
     readonly property int running: { session.revision; return session.downloads.filter(d => d.state === "running").length }
     signal started(string id)           // a download that goes ahead (not a held one): Main's notice while folded
+    signal ended(string id)             // it landed or failed: Main's notification when its row is out of sight
 
     // `pageId`: the page whose view started it ("" for none); `viewUrl`: that view's address (an attached
     // popup's own, not its opener's), "" when you typed the address; `fetched`: it came from the fetcher.
@@ -89,11 +90,13 @@ QtObject {
             if (!session.offTheRecord)
                 Disk.mark(path, { "user.xdg.origin.url": d.url, "user.xdg.referrer.url": from.url ?? "", "user.browser.thread": from.thread ?? "" });
             schedule();
+            ended(id);
         } else if (r.state === S.DownloadCancelled) {
             delete requests[id];
             session.removeDownload(id);
         } else if (r.state === S.DownloadInterrupted) {
             session.updateDownload(id, { state: "failed", reason: Downloads.reason(r.interruptReason), left: -1 });
+            ended(id);
         }
         pages();
     }
@@ -130,11 +133,14 @@ QtObject {
             ticker.stop();
     }
 
-    // A row's action (Downloads.actions), or a click on it: "open" on a finished one.
+    // A row's action (Downloads.actions), or a click on it: "open" on a finished one. A failure's notification stays until
+    // it is dealt with, here or there, and then goes.
     function act(id, action) {
         const d = session.downloadById(id), r = requests[id] ?? null;
         if (!d)
             return;
+        if (d.state === "failed")
+            Apps.withdraw(id);
         switch (action) {
         case "pause":
             if (r) r.pause();
@@ -221,8 +227,10 @@ QtObject {
     // Main's fetcher: its load ended with no download
     function fetchFailed(reason) {
         const id = fetchQueue[0];
-        if (id)
+        if (id) {
             session.updateDownload(id, { state: "failed", reason: reason });
+            ended(id);
+        }
         nextFetch();
     }
     function nextFetch() {
@@ -242,6 +250,15 @@ QtObject {
         for (const id in session.pages)
             if (!!session.pages[id].downloading !== coming.has(id))
                 session.update(id, { downloading: coming.has(id) });
+    }
+
+    // a notification's action (Main.downloadEnded): the row's own, for this session's downloads
+    property Connections noticeActions: Connections {
+        target: Apps
+        function onNoticeAction(key, action) {
+            if (downloader.session.downloadById(key))
+                downloader.act(key, action);
+        }
     }
 
     // A row leaves 10 min after its file was opened, and a finished one Downloads.keepLanded after it landed: the rail is

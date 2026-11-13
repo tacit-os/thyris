@@ -378,7 +378,7 @@ bool EngineCheck::removeCached(const QString &url) {
     return QFile::remove(path);
 }
 
-QString EngineCheck::fixtureFile(const QString &name, const QString &text) {
+QString EngineCheck::fixtureFile(const QString &name, const QString &text, bool program) {
     // only ever under the throwaway XDG_DATA_HOME main.cpp sets in check mode
     const QString data = qEnvironmentVariable("XDG_DATA_HOME");
     if (data.isEmpty() || !data.startsWith(QDir::tempPath()) || name.startsWith(u'/') || name.split(u'/').contains(QStringLiteral("..")))
@@ -388,7 +388,17 @@ QString EngineCheck::fixtureFile(const QString &name, const QString &text) {
     QFile file(data + u'/' + name);
     if (!file.open(QIODevice::WriteOnly) || file.write(text.toUtf8()) < 0)
         return {};
+    if (program)
+        file.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
     return file.fileName();
+}
+
+QString EngineCheck::fixtureText(const QString &name) const {
+    const QString data = qEnvironmentVariable("XDG_DATA_HOME");
+    if (data.isEmpty() || !data.startsWith(QDir::tempPath()) || name.startsWith(u'/') || name.split(u'/').contains(QStringLiteral("..")))
+        return {};
+    QFile file(data + u'/' + name);
+    return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
 }
 
 QString EngineCheck::fixtureDir(const QString &path) {
@@ -671,7 +681,7 @@ QString EngineCheck::folderStamp(const QString &dir) const {
     return out.join(u'\n');
 }
 
-void EngineCheck::launch(const QStringList &args, const QVariantMap &env, bool viaShell, const QString &dir) {
+void EngineCheck::launch(const QStringList &args, const QVariantMap &env, bool viaShell, const QString &dir, int limit) {
     auto *process = new QProcess(this);
     if (!dir.isEmpty())
         process->setWorkingDirectory(dir);
@@ -694,7 +704,7 @@ void EngineCheck::launch(const QStringList &args, const QVariantMap &env, bool v
         process->deleteLater();
     });
     // a hand-off that failed would go on as a whole second browser
-    QTimer::singleShot(10000, process, [process] { process->kill(); });
+    QTimer::singleShot(limit, process, [process] { process->kill(); });
     // bash runs the one command of a `-c` in its own place; the `exit` after it keeps the shell between
     if (viaShell)
         process->start(QStringLiteral("/bin/sh"), QStringList{QStringLiteral("-c"), QStringLiteral("\"$0\" \"$@\"; exit $?"), self} + args);

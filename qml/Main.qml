@@ -281,6 +281,7 @@ Window {
         session: sessionModel
         folder: root.downloadFolder
         onStarted: id => { const d = sessionModel.downloadById(id); (root.ownerOf(d ? d.page : "") ?? (root.offTheRecord ? root : root.lastMain())).downloadStarted(id) }
+        onEnded: id => { const d = sessionModel.downloadById(id); (root.ownerOf(d ? d.page : "") ?? (root.offTheRecord ? root : root.lastMain())).downloadEnded(id) }
     }
     readonly property var downloadModel: ownLists ? ownDownloads : primary.downloadModel
     // Certificates continued past (PLAN.md 8g): host -> its certificate's page. The engine lets such a host
@@ -2456,6 +2457,20 @@ Window {
     function downloadStarted(id) {
         noticeDownload = id;
         noticeEnd.restart();
+    }
+    // A download that lands or fails while its row is out of sight (the rail folded, page full screen, or the window not
+    // in front) is said by the shell's notification, naming the file, with its row's ways on: Open and Show in Files, or
+    // Try again for a failure, which stays until it is dealt with (the owner, 2026-11-13; Downloader runs the action).
+    // A private window's is left out of the shell's list.
+    function downloadEnded(id) {
+        const d = sessionModel.downloadById(id);
+        if (!d || root.active && (railPinned || peek.out) && !pageFullScreen)
+            return;
+        const status = Downloads.status(d), failed = status === "failed";
+        // a program waiting on Keep is opened from its row only
+        const ways = failed ? Downloads.ways(status).slice(0, 1) : Downloads.actions("done").filter(a => status === "done" || a.name === "show");
+        Apps.notify(id, d.file, failed ? "Failed · " + Downloads.failure(d.reason) : "Downloaded · " + Downloads.size(d.total > 0 ? d.total : d.received),
+                    ways.reduce((list, a) => list.concat([a.name, a.label]), []), failed, offTheRecord);
     }
 
     // The address card's and the > prefix's actions on the current page; the browser's own pages need none.

@@ -17,6 +17,10 @@
 #include <QStandardPaths>
 #include <QThread>
 #include <csignal>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "shell.h"
 
 // One per profile: a throwaway data dir (shots, engine checks) never meets the real browser's socket.
 QString Instance::socketPath(const QString &dataDir, const QString &kind) {
@@ -39,19 +43,22 @@ Instance::Instance(const QString &dataDir, QObject *parent)
 }
 
 // The pid in the lock of a browser that has not answered, if that process runs this very executable (Chromium's
-// IsChromeProcess check, process_singleton_posix.cc): a lock left by something else is never a reason to kill it.
-// /proc/<pid>/exe of a binary replaced by an update reads "<path> (deleted)". SIGTERM, 3 s to go, then SIGKILL.
-static bool endHolder(QLockFile &lock) {
+// IsChromeProcess check, process_singleton_posix.cc), else 0: a lock left by something else is never a reason to end it,
+// nor to ask about it. /proc/<pid>/exe of a binary replaced by an update reads "<path> (deleted)".
+static qint64 holderOf(QLockFile &lock) {
     qint64 pid = 0;
     QString host, app;
     if (!lock.getLockInfo(&pid, &host, &app) || pid <= 1 || pid == QCoreApplication::applicationPid())
-        return false;
-    const QString link = QStringLiteral("/proc/%1/exe").arg(pid);
-    QString exe = QFile::symLinkTarget(link);
+        return 0;
+    QString exe = QFile::symLinkTarget(QStringLiteral("/proc/%1/exe").arg(pid));
     if (exe.endsWith(u" (deleted)"))
         exe.chop(10);
-    if (exe.isEmpty() || exe != QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath())
-        return false;
+    return !exe.isEmpty() && exe == QFileInfo(QCoreApplication::applicationFilePath()).canonicalFilePath() ? pid : 0;
+}
+
+// Ends the browser `pid`: SIGTERM, 3 s to go, then SIGKILL.
+static bool endHolder(qint64 pid) {
+    const QString link = QStringLiteral("/proc/%1/exe").arg(pid);
     // a zombie keeps its pid but has no exe
     const auto gone = [&link] { return QFile::symLinkTarget(link).isEmpty(); };
     ::kill(pid_t(pid), SIGTERM);
@@ -65,6 +72,73 @@ static bool endHolder(QLockFile &lock) {
     return gone();
 }
 
+// The notch's "Thyris isn't answering" with Wait and Close it: the shell's prompt for an app that stopped answering
+// (IslandController.notAnswering), asked as its scripts/activity/hyprland-dialog asks it. The answer comes back on a
+// fifo as the button's word, "close" or "wait"; the prompt is this process's (its pid), so it goes when this one does, and
+// it names the browser's process, whose Details Activity shows.
+namespace {
+class Prompt {
+public:
+    ~Prompt() { drop(); }
+    bool shown() const { return m_shown; }
+    // "shown"; "no" when the shell shows no prompt now (its notch off, or held back); "" with no shell to ask
+    QString ask(qint64 pid) {
+        if (m_fd < 0) {
+            m_fifo = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation) + QStringLiteral("/thyris-anr-") + id();
+            QFile::remove(m_fifo);
+            if (::mkfifo(QFile::encodeName(m_fifo).constData(), 0600) != 0)
+                return {};
+            // not waiting for a writer: the shell opens the other end when it answers
+            m_fd = ::open(QFile::encodeName(m_fifo).constData(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+            if (m_fd < 0) {
+                QFile::remove(m_fifo);
+                return {};
+            }
+        }
+        const QJsonObject request{{QStringLiteral("id"), id()}, {QStringLiteral("cls"), QStringLiteral("thyris")},
+                                  {QStringLiteral("title"), QString()}, {QStringLiteral("pid"), pid}, {QStringLiteral("fifo"), m_fifo},
+                                  {QStringLiteral("buttons"), QJsonArray{QStringLiteral("close"), QStringLiteral("wait")}}};
+        QProcess qs;
+        qs.start(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("island"), QStringLiteral("notAnswering"),
+                                                                QString::fromUtf8(QJsonDocument(request).toJson(QJsonDocument::Compact))});
+        const bool ran = qs.waitForFinished(5000) && qs.exitStatus() == QProcess::NormalExit && qs.exitCode() == 0;
+        m_shown = ran && qs.readAllStandardOutput().trimmed() == "shown";
+        return m_shown ? QStringLiteral("shown") : ran ? QStringLiteral("no") : QString();
+    }
+    // the button's word once the prompt is answered (the shell has let it go then), else ""
+    QString answer() {
+        char buffer[64];
+        for (ssize_t n; m_fd >= 0 && (n = ::read(m_fd, buffer, sizeof buffer)) > 0;)
+            m_got.append(buffer, n);
+        const qsizetype end = m_got.indexOf('\n');
+        if (end < 0)
+            return {};
+        const QString word = QString::fromUtf8(m_got.left(end)).trimmed();
+        m_got.clear();
+        m_shown = false;
+        return word;
+    }
+    // the prompt leaves the notch unanswered (the browser answered, or went), and the fifo goes
+    void drop() {
+        if (m_shown)
+            QProcess::startDetached(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("island"), QStringLiteral("notAnsweringGone"), id()});
+        m_shown = false;
+        if (m_fd >= 0) {
+            ::close(m_fd);
+            m_fd = -1;
+            QFile::remove(m_fifo);
+        }
+    }
+
+private:
+    static QString id() { return QString::number(QCoreApplication::applicationPid()); }
+    QString m_fifo;
+    int m_fd = -1;
+    QByteArray m_got;
+    bool m_shown = false;
+};
+}
+
 int Instance::start(const QUrl &url, const QString &from, const QString &context) {
     QJsonObject message{{QStringLiteral("url"), url.toString(QUrl::FullyEncoded)}, {QStringLiteral("from"), from},
                         {QStringLiteral("context"), context}};
@@ -74,39 +148,54 @@ int Instance::start(const QUrl &url, const QString &from, const QString &context
         message.insert(QStringLiteral("token"), token);
     const QByteArray line = QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
     // One still starting listens moments after taking the lock; one quitting keeps it, listening no more, until its
-    // Chromium has shut down, and then this one is the browser.
-    for (QDeadlineTimer deadline(10000);;) {
+    // Chromium has shut down, and then this one is the browser. The link waits in one connection until it is answered.
+    QLocalSocket socket;
+    Prompt prompt;
+    // the browser that is ended (Close it, or Chromium's way with no shell to ask) leaves this one the profile
+    const auto takeOver = [this](qint64 pid) {
+        if (!endHolder(pid))
+            return int(NoAnswer);
+        if (!m_lock->tryLock(0)) {
+            m_lock->removeStaleLockFile();
+            m_lock->tryLock(0);
+        }
+        QLocalServer::removeServer(m_path);
+        return int(m_server.listen(m_path) ? Listening : Failed);
+    };
+    for (QDeadlineTimer deadline(20000);;) {
         // No browser on this profile (a lock that cannot be written at all counts so too): this one is it. The socket
         // file of one that did not quit cleanly goes first.
         if (m_lock->isLocked() || m_lock->tryLock(0) || m_lock->error() != QLockFile::LockFailedError) {
             QLocalServer::removeServer(m_path);
             return m_server.listen(m_path) ? Listening : Failed;
         }
-        const HandOver result = handOver(line);
+        const HandOver result = handOver(socket, line);
         if (result == Taken)
             return HandedOff;
-        if (result == Held || deadline.hasExpired()) {
-            // The browser holds the profile and does not answer (2026-10-24: hung, and a new start did nothing). As
-            // Chromium's second process does, end it and start normally; this process opens the link it was given.
-            if (endHolder(*m_lock)) {
-                if (!m_lock->tryLock(0)) {
-                    m_lock->removeStaleLockFile();
-                    m_lock->tryLock(0);
-                }
-                QLocalServer::removeServer(m_path);
-                // the shell is reached by its path, TACIT_SHELL, as Tacit's own helpers reach it: on an install the
-                // config name "tacit" names /etc/xdg/quickshell/tacit, which is not the path the shell runs from (VM test)
-                const QString shell = qEnvironmentVariable("TACIT_SHELL");
-                QStringList args = shell.isEmpty() ? QStringList{QStringLiteral("-c"), QStringLiteral("tacit")}
-                                                   : QStringList{QStringLiteral("-p"), shell};
-                args << QStringLiteral("ipc") << QStringLiteral("call") << QStringLiteral("island") << QStringLiteral("note")
-                     << QStringLiteral("error") << QStringLiteral("Thyris wasn't answering · restarted");
-                QProcess::startDetached(QStringLiteral("qs"), args);
-                return m_server.listen(m_path) ? Listening : Failed;
-            }
-            return result == Held ? Queued : NoAnswer;
+        if (prompt.shown()) {
+            const QString answer = prompt.answer();
+            // Close it: a holder gone meanwhile leaves the lock to take above
+            if (const qint64 pid = answer == u"close" ? holderOf(*m_lock) : 0)
+                return takeOver(pid);
+            // Wait (Esc too): asked again if it still has not answered in 20 s
+            if (answer == u"wait")
+                deadline.setRemainingTime(20000);
+        } else if (deadline.hasExpired()) {
+            // The browser holds the profile and has not taken the link in 20 s, as long as Chromium waits (its
+            // kTimeoutInSeconds, process_singleton_posix.cc): the notch asks whether to wait or close it (the owner,
+            // 2026-11-13), where it used to be ended after 4 s, and with it a form being filled or an upload. Only with no
+            // shell to ask is it ended unasked, as Chromium's second process ends it; this one opens the link then.
+            const qint64 pid = holderOf(*m_lock);
+            if (pid == 0)
+                return result == Held ? Queued : NoAnswer;
+            const QString said = prompt.ask(pid);
+            if (said.isEmpty())
+                return takeOver(pid);
+            if (said != u"shown")
+                deadline.setRemainingTime(20000);
         }
-        QThread::msleep(100);
+        if (result == Refused)
+            QThread::msleep(100);
     }
 }
 
@@ -118,18 +207,20 @@ bool Instance::running() {
     return m_lock->error() == QLockFile::LockFailedError;
 }
 
-// Taken once the running browser answers "ok"; Held while it keeps the connection open with no answer for 4 s (the
-// line waits in its socket); Refused when nothing listens or the connection closes unanswered.
-Instance::HandOver Instance::handOver(const QByteArray &line) const {
-    QLocalSocket socket;
-    socket.connectToServer(m_path);
-    if (!socket.waitForConnected(1000))
-        return Refused;
-    socket.write(line);
-    socket.waitForBytesWritten(1000);
-    for (QDeadlineTimer answer(4000); !socket.canReadLine() && !answer.hasExpired();)
-        if (!socket.waitForReadyRead(int(answer.remainingTime())))
-            break;
+// Taken once the running browser answers "ok"; Held while it keeps the connection open with no answer yet (the line
+// waits in its socket); Refused when nothing listens or the connection closes unanswered, and the line goes again in a
+// new one. The line is written once a connection, and the answer waited for 100 ms at a time.
+Instance::HandOver Instance::handOver(QLocalSocket &socket, const QByteArray &line) const {
+    if (socket.state() != QLocalSocket::ConnectedState) {
+        socket.abort();
+        socket.connectToServer(m_path);
+        if (!socket.waitForConnected(1000))
+            return Refused;
+        socket.write(line);
+        socket.waitForBytesWritten(1000);
+    }
+    if (!socket.canReadLine())
+        socket.waitForReadyRead(100);
     if (socket.canReadLine())
         return socket.readLine() == "ok\n" ? Taken : Refused;
     return socket.state() == QLocalSocket::ConnectedState ? Held : Refused;
@@ -142,7 +233,20 @@ void Instance::close() {
             socket->abort();
 }
 
+void Instance::setHolding(bool on) {
+    m_holding = on;
+    if (!on)
+        for (const QPointer<QLocalSocket> &socket : std::exchange(m_held, {}))
+            if (socket)
+                read(socket);
+}
+
 void Instance::read(QLocalSocket *socket) {
+    if (m_holding) {
+        if (!m_held.contains(socket))
+            m_held.append(socket);
+        return;
+    }
     if (!socket->canReadLine()) {
         // a link is one line; this much without one is not a browser handing a link over
         if (socket->bytesAvailable() > 8 << 20)

@@ -2,7 +2,9 @@
 
 #include <QLocalServer>
 #include <QLockFile>
+#include <QList>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QUrl>
 #include <memory>
@@ -17,6 +19,9 @@ class Instance : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString path READ path CONSTANT)
     Q_PROPERTY(bool listening READ listening)
+    // --check-engine: links are read and left unanswered while it is set, as a busy browser leaves them, and answered
+    // once it is unset (the instance group)
+    Q_PROPERTY(bool holding READ holding WRITE setHolding)
 public:
     enum Start { Listening, HandedOff, NoAnswer, Failed, Queued };
     Q_ENUM(Start)
@@ -24,13 +29,16 @@ public:
     explicit Instance(const QString &dataDir, QObject *parent = nullptr);
     QString path() const { return m_path; }
     bool listening() const { return m_server.isListening(); }
+    bool holding() const { return m_holding; }
+    void setHolding(bool on);
     // With no browser running on this profile, takes the lock and listens (Listening; Failed when it cannot listen,
     // and the lock still keeps later starts from making a second browser on the profile). Otherwise hands `url`,
-    // `from` and `context` to the one running: HandedOff once it took them. One that holds the link unanswered for 4 s
-    // (hung), or takes none for 10 s (it keeps the lock), is ended if it is this executable (SIGTERM, SIGKILL after 3 s),
-    // and this one takes the lock (Listening), with a line in the notch; Queued / NoAnswer when that process is not
-    // ours to end. One that is quitting takes no link (close()), so this tries again, and takes the lock itself once
-    // that browser has gone.
+    // `from` and `context` to the one running: HandedOff once it took them. One that has not taken the link in 20 s
+    // (hung, or quitting with the lock still held) and is this executable is asked about in the notch, "Thyris isn't
+    // answering" with Wait and Close it: Wait asks again 20 s later, Close it ends it (SIGTERM, SIGKILL after 3 s) and
+    // this one takes the lock (Listening); with no shell to ask, it is ended so. Queued / NoAnswer when that process is
+    // not ours to end. One that is quitting takes no link (close()), so this tries again, and takes the lock itself
+    // once that browser has gone.
     Q_INVOKABLE int start(const QUrl &url = QUrl(), const QString &from = QString(), const QString &context = QString());
     // Another browser holds this profile now (its lock), without taking the lock: the CEF build asks before it starts
     // an engine of its own (main).
@@ -56,10 +64,12 @@ signals:
 
 private:
     enum HandOver { Taken, Held, Refused };
-    HandOver handOver(const QByteArray &line) const;
+    HandOver handOver(QLocalSocket &socket, const QByteArray &line) const;
     void read(QLocalSocket *socket);
 
     QString m_path;
     std::unique_ptr<QLockFile> m_lock;
     QLocalServer m_server;
+    bool m_holding = false;
+    QList<QPointer<QLocalSocket>> m_held;
 };

@@ -83,8 +83,10 @@ public:
     // An app named `name` as the default for links of `scheme`, in the throwaway data dir's applications.
     Q_INVOKABLE bool fakeApp(const QString &scheme, const QString &name);
     // A file named `name` (a relative path, its folders made) holding `text` in the throwaway data dir, for a file
-    // input; its path.
-    Q_INVOKABLE QString fixtureFile(const QString &name, const QString &text);
+    // input (a `program`: one the owner may run); its path.
+    Q_INVOKABLE QString fixtureFile(const QString &name, const QString &text, bool program = false);
+    // What the file `name` in the throwaway data dir holds, "" for none
+    Q_INVOKABLE QString fixtureText(const QString &name) const;
     // removes a file in the check's own cache (XDG_CACHE_HOME under the temp folder); false for any other path
     Q_INVOKABLE bool removeCached(const QString &url);
     // A folder at the relative `path` in the throwaway data dir, for a launch's working directory; its path.
@@ -149,8 +151,9 @@ public:
     // A second `browser <args>`, as another app runs it: through `sh -c` when `viaShell` (a process between this one
     // and it), in this process's environment (the throwaway dirs) with `env` added, in the working directory `dir`
     // when given. launched() says how it went: { code: its exit code, -1 while it runs, ms, output }. One still
-    // running after 10 s is killed (code -2).
-    Q_INVOKABLE void launch(const QStringList &args, const QVariantMap &env = {}, bool viaShell = false, const QString &dir = QString());
+    // running after `limit` ms is killed (code -2).
+    Q_INVOKABLE void launch(const QStringList &args, const QVariantMap &env = {}, bool viaShell = false, const QString &dir = QString(),
+                            int limit = 10000);
     Q_INVOKABLE QVariantMap launched() const { return m_launched; }
     Q_INVOKABLE qint64 pid() const;
     // The check's own sound server (tools/check-engine starts it in this process's XDG_RUNTIME_DIR, with one speaker,

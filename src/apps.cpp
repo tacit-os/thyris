@@ -2,6 +2,9 @@
 #include "shell.h"
 #include "webstore.h"
 
+#include <QDBusConnection>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
@@ -158,4 +161,62 @@ void Apps::makeDefault() {
     });
     process->setProcessEnvironment(outside());
     process->start(QStringLiteral("xdg-mime"), QStringList{QStringLiteral("default"), desktopId()} + webTypes);
+}
+
+static const QString notifications = QStringLiteral("org.freedesktop.Notifications");
+static const QString notificationsPath = QStringLiteral("/org/freedesktop/Notifications");
+
+void Apps::notify(const QString &key, const QString &summary, const QString &body, const QStringList &actions, bool resident,
+                  bool transient) {
+    if (dryRun) {
+        m_lastNotice = {{QStringLiteral("key"), key}, {QStringLiteral("summary"), summary}, {QStringLiteral("body"), body},
+                        {QStringLiteral("actions"), actions}, {QStringLiteral("resident"), resident},
+                        {QStringLiteral("transient"), transient}, {QStringLiteral("count"), m_lastNotice.value(QStringLiteral("count")).toInt() + 1}};
+        emit noticed();
+        return;
+    }
+    QDBusConnection bus = QDBusConnection::sessionBus();
+    if (!m_listening) {
+        m_listening = true;
+        for (const QString &name : {QStringLiteral("ActionInvoked"), QStringLiteral("NotificationClosed")})
+            bus.connect(notifications, notificationsPath, notifications, name, this, SLOT(noticeChanged(QDBusMessage)));
+    }
+    // the launcher's name, so the shell knows the app (thyris on an install, opsis-new-engine on the dev machine)
+    QVariantMap hints{{QStringLiteral("desktop-entry"), desktopId().remove(QRegularExpression(QStringLiteral("\\.desktop$")))}};
+    if (transient)
+        hints.insert(QStringLiteral("transient"), true);
+    QDBusMessage call = QDBusMessage::createMethodCall(notifications, notificationsPath, notifications, QStringLiteral("Notify"));
+    call << QStringLiteral("Thyris") << m_notices.value(key) << QString() << summary << body << actions << hints << (resident ? 0 : -1);
+    auto *watcher = new QDBusPendingCallWatcher(bus.asyncCall(call), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher, key] {
+        const QDBusPendingReply<uint> reply = *watcher;
+        if (reply.isValid())
+            m_notices.insert(key, reply.value());
+        watcher->deleteLater();
+    });
+}
+
+void Apps::withdraw(const QString &key) {
+    if (dryRun) {
+        m_lastWithdrawn = key;
+        emit noticed();
+        return;
+    }
+    if (!m_notices.contains(key))
+        return;
+    QDBusMessage call = QDBusMessage::createMethodCall(notifications, notificationsPath, notifications, QStringLiteral("CloseNotification"));
+    call << m_notices.take(key);
+    QDBusConnection::sessionBus().asyncCall(call);
+}
+
+// ActionInvoked (id, action) and NotificationClosed (id, reason), for every app's notifications: only ours are answered
+void Apps::noticeChanged(const QDBusMessage &message) {
+    const uint id = message.arguments().value(0).toUInt();
+    const QString key = m_notices.key(id);
+    if (key.isEmpty())
+        return;
+    if (message.member() == u"ActionInvoked")
+        emit noticeAction(key, message.arguments().value(1).toString());
+    else
+        m_notices.remove(key);
 }
