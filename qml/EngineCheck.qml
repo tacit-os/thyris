@@ -1298,6 +1298,24 @@ QtObject {
           act: () => { check.dl = session.addDownload({ page: session.currentPage, url: check.local("/plain"), file: "gone.bin", path: Disk.downloads + "/gone.bin",
                                                         state: "failed", reason: "browser closed" }); downloads.act(check.dl, "retry") },
           expect: () => check.record().state === "failed" && check.record().reason === "no file" && downloads.fetchUrl === "" },
+        { name: "a Retry whose address is a page with a script: There was no file at that address, the page loaded with no script", wait: 2000,
+          act: () => { downloads.act(check.dl, "remove");
+              check.dl = session.addDownload({ page: session.currentPage, url: check.served("scripted", "/scripted"), file: "scripted.bin",
+                                               path: Disk.downloads + "/scripted.bin", state: "failed", reason: "browser closed" });
+              downloads.act(check.dl, "retry") },
+          expect: () => check.record().state === "failed" && check.record().reason === "no file" && downloads.fetchUrl === "" },
+        { name: "and its script never ran in the hidden fetcher, with your cookies: it set none", wait: 1200, act: () => SiteData.cookies("scripted.test"),
+          expect: () => SiteData.cookies("scripted.test") === 0 },
+        { name: "(an Always page that opens pages)", wait: 2000,
+          act: () => { check.alwaysPage = session.addAlways(check.served("pin", "/popup-opener"), "pin"); app.show(check.alwaysPage) },
+          expect: () => session.currentPage === check.alwaysPage && view.title === "opener" && !view.loading },
+        { name: "a click there on a link that only brings a file: the file comes, the page opened for it goes, and the Always page is on screen again", wait: 2500,
+          focus: "act = () => window.open('/file/from-always.bin?size=5000')", act: () => check.click(),
+          expect: () => { const d = session.downloads.find(x => x.file === "from-always.bin");
+              probe.report("     " + (d ? d.state : "no download") + "; on screen: " + (session.current ? session.current.url : "nothing"));
+              return !!d && d.state === "done" && d.page === check.alwaysPage && session.currentPage === check.alwaysPage
+                  && Object.keys(app.views).every(id => !!session.pages[id]) } },
+        { name: "(the Always page removed)", wait: 600, act: () => app.command("removeAlways", check.alwaysPage), expect: () => !session.pages[check.alwaysPage] },
         { name: "(folded)", wait: 1200, act: () => { downloads.act(check.dl, "remove"); app.railPinned = false }, expect: () => !app.railPinned },
         { name: "folded, a download that starts says so in the docked label, its percent kept", wait: 700,
           focus: "location.href = '/file/notice.bin?size=100000&delay=10'", act: () => probe.pointer(700, 400),
@@ -1524,6 +1542,20 @@ QtObject {
         { name: "Esc: the panel closes and the overlay slides back; the keys on the page", key: Qt.Key_Escape, wait: 900,
           expect: () => !site.open && !hoverPeek.out && peekedRail.slide === 0 && view.activeFocus },
         { name: "(Ctrl+B pins again)", focus: "document.activeElement.blur()", key: Qt.Key_B, mods: ctrl, wait: 1200, expect: () => app.railPinned },
+        // its address prints decoded, as a real one's does (main.cpp puts .test on Qt's IDN list). Whether the first load
+        // ran the scriptlet is only reported: on CEF a new site's process gets the page's scripts by a message its first
+        // document may beat, so the wrapper is then run in the page as it is
+        { name: "(a site whose name is not ASCII: bücher.test, xn--bcher-kva.test to its page)", wait: 1500,
+          act: () => app.go(check.served("bücher", "/plain"), "navigate"), expect: () => view.title === "plain" && String(view.url).indexOf("bücher.test") > 0,
+          page: "document.documentElement.dataset.scriptlet || 'none'", pageExpect: v => true },
+        { name: "the scriptlets' wrapper made for it, run in that page, runs the scriptlet the list has for it: it names the host as the page does", wait: 800,
+          act: () => { const s = view.userScripts.find("adblock-scriptlets");
+              probe.report("     its wrapper: " + (s.length > 0 ? JSON.stringify(s[0].sourceCode.slice(0, 70)) : "none"));
+              if (s.length > 0)
+                  view.runJavaScript(s[0].sourceCode) },
+          expect: () => view.title === "plain",
+          page: "[location.hostname, new URL('http://bücher.test').hostname, document.documentElement.dataset.scriptlet || 'none'].join(' ')",
+          pageExpect: v => / ran$/.test(v) },
     ]
     // Single instance (PLAN.md 4, 8 phase 3): this run is the running browser, listening in its throwaway runtime dir,
     // and the links come from second `browser` processes started there as other apps start them.
@@ -1757,6 +1789,16 @@ QtObject {
         { name: "Ctrl+Shift+T in the second window brings the first back whole", wait: 3000,
           act: () => { probe.back(check.second()); probe.press(Qt.Key_T, ctrl | Qt.ShiftModifier) },
           expect: () => app.visible && app.active && app.mainWindows.length === 2 && session.openThreads().length === check.firstOrder && view !== null },
+        { name: "(the second window focused, on a page that opens pages)", wait: 1500,
+          act: () => { const w = check.second(); probe.back(w); w.go(check.local("/popup-opener"), "navigate") },
+          expect: () => check.second().active && check.second().currentView.title === "opener" },
+        { name: "a click there on a link that only brings a file: the file comes, and the page opened for it goes from that window, its opener on screen", wait: 2500,
+          act: () => { const w = check.second(); check.fileOpener = w.windowSession.currentPage; check.viewsBefore = Object.keys(w.views).length;
+              w.currentView.runJavaScript("act = () => window.open('/file/second-window.bin?size=5000')", () => check.click()) },
+          expect: () => { const w = check.second(), d = session.downloads.find(x => x.file === "second-window.bin");
+              probe.report("     " + (d ? d.state : "no download") + "; on screen there: " + w.currentView.title + ", " + Object.keys(w.views).length + " views");
+              return !!d && d.state === "done" && d.page === check.fileOpener && w.windowSession.currentPage === check.fileOpener
+                  && Object.keys(w.views).length === check.viewsBefore } },
         { name: "(the second window closed)", wait: 1500, act: () => check.second().close(), expect: () => app.mainWindows.length === 1 },
         { name: "closing the last main window quits with the session kept, marked clean (counted in check mode)", wait: 1500,
           act: () => { probe.back(app); check.quits = app.quits; app.close() },
@@ -1775,6 +1817,8 @@ QtObject {
     property var records: []
     property var restoredThreads: []
     property int firstOrder: 0
+    property string fileOpener: ""     // the page whose link only brings a file, and the views around it
+    property int viewsBefore: 0
     function second() { return app.mainWindows[1] ?? null }
     function pageTitled(s, title) { return Object.keys(s.pages).find(id => s.pages[id].title === title && s.ownOrAlways(id)) ?? "" }
     // the top of a row in the first window's rail, in the window
@@ -1874,7 +1918,15 @@ QtObject {
         { name: "Ctrl+T there: the new-page card predicts the window's own thread for words its pages share", key: Qt.Key_T, mods: ctrl, wait: 900,
           act: () => check.later(() => check.typeText("hush two")),
           expect: () => { const w = check.priv(); return w.windowBar.opened && w.windowBar.target === w.windowSession.currentThread.id } },
-        { name: "(Esc)", key: Qt.Key_Escape, expect: () => !check.priv().windowBar.opened },
+        { name: "the window losing the focus to another app leaves the card open, its words in it", wait: 300, act: () => probe.away(),
+          expect: () => { const w = check.priv(); return !w.active && w.windowBar.opened && w.windowBar.text === "hush two" } },
+        { name: "(the window focused again)", wait: 300, act: () => probe.back(check.priv()), expect: () => check.priv().active && check.priv().windowBar.opened },
+        { name: "and the keys are the card's again: typed there, they go in", wait: 300, act: () => check.typeText("!"),
+          expect: () => check.priv().windowBar.text === "hush two!" },
+        { name: "(Backspace)", key: Qt.Key_Backspace, wait: 300, expect: () => check.priv().windowBar.text === "hush two" },
+        { name: "Tab: a new thread instead", key: Qt.Key_Tab, wait: 300, expect: () => check.priv().windowBar.opened && check.priv().windowBar.target === "" },
+        { name: "Shift+Tab flips it back, and the card stays open", key: Qt.Key_Backtab, mods: Qt.ShiftModifier, wait: 300,
+          expect: () => { const w = check.priv(); return w.windowBar.opened && w.windowBar.target === w.windowSession.currentThread.id && w.windowBar.text === "hush two" } },
         // the card keeps what Esc left in it for 30 s: the prefix goes in with its words, in place of those
         { name: "@ there finds nothing of the main window's (its page titled plain)", wait: 900, act: () => check.priv().windowBar.show("@plain"),
           expect: () => check.priv().windowBar.opened && check.priv().windowBar.rows.length === 0 },
@@ -2037,6 +2089,13 @@ QtObject {
         { name: "Ctrl+L: the editing card holds the data: address, all of it selected", focus: "document.activeElement && document.activeElement.blur()",
           key: Qt.Key_L, mods: ctrl, wait: 900,
           expect: () => { const e = check.editor(); return address.editing && e.text === String(view.url) && e.selectedText === e.text && e.text.startsWith("data:text/html,") } },
+        { name: "(Esc)", key: Qt.Key_Escape, wait: 800, expect: () => !address.out },
+        { name: "(a data: page of 1.5 MB, as a script makes one)", wait: 3000,
+          act: () => app.go("data:text/html;base64," + "PGgxPmhpPC9oMT4K".repeat(98304), "navigate"), expect: () => String(view.url).length > 1500000 },
+        { name: "Ctrl+L there: the card holds its first 32 k characters, cut with \u2026, not 1.5 MB laid out as one paragraph",
+          focus: "document.activeElement && document.activeElement.blur()", key: Qt.Key_L, mods: ctrl, wait: 1500,
+          expect: () => { const e = check.editor(); probe.report("     the card holds " + e.text.length + " characters");
+              return address.editing && e.text.length === 32769 && e.text.endsWith("\u2026") && String(view.url).startsWith(e.text.slice(0, 32768)) } },
         { name: "(Esc)", key: Qt.Key_Escape, wait: 800, expect: () => !address.out },
         { name: "about:blank reads Blank page, the globe in the slot", wait: 1500, act: () => app.go("about:blank", "navigate"),
           expect: () => { const f = rail.addressField;
@@ -4098,6 +4157,16 @@ QtObject {
               probe.report("     " + folders);
               return Zen.state === "" && folders === "From Firefox: Toolbar, From Firefox: Toolbar / Kernel"
                   && probe.keyringHolds("https://login.fx.test", check.fx.user, check.fx.pass) && words.indexOf("Zen") < 0 } },
+        { name: "(Firefox's places.sqlite spoilt, so it does not read; Welcome open)", wait: 1500,
+          act: () => { const data = Store.dataDir.replace(/\/browser$/, "") + "/";
+              check.fx.spoilt = probe.fixtureFile(Zen.profile.path.slice(data.length) + "/places.sqlite", "not a database"); app.openWelcome() },
+          expect: () => !!check.fx.spoilt && app.welcome.visible && app.welcome.phase === "arrive" && app.welcome.sources.some(s => s.kind === "firefox" && s.name === "Firefox") },
+        { name: "bringing Firefox over then: Welcome says it could not be read and offers the browsers again, not Reading… for ever", wait: 4000,
+          act: () => app.bringOver(app.welcome.sources.find(s => s.kind === "firefox" && s.name === "Firefox")),
+          expect: () => { probe.report("     " + app.welcome.phase + ": " + app.welcome.notice);
+              return app.welcome.phase === "arrive" && app.welcome.notice === "Thyris couldn't read Firefox's profile, so nothing was brought over."
+                  && app.browserRun === null && Zen.state === "" } },
+        { name: "(Welcome closed)", wait: 600, act: () => app.closeWelcome(), expect: () => !app.welcome.visible },
         { name: "(the made-up home put away: no browser of the family found, its import's record cleared, for the groups after)", wait: 800,
           act: () => { Zen.useHome(""); for (const k of ["zenImport", "zenFailure", "broughtOver", "welcomed"]) app.prefs.set(k, null) },
           expect: () => Zen.browsers.length === 0 && !Zen.profile.path && !app.prefs.get("zenImport") },
@@ -5526,6 +5595,8 @@ QtObject {
         if (port)
             return;
         const pages = { "/plain": "<title>plain</title><p>plain page",
+            // a page whose script leaves a mark only a script can, a cookie (the Retry fetcher runs none)
+            "/scripted": "<title>scripted</title><script>document.cookie = 'ran=1; max-age=600'</script>",
             "/login": "<title>login</title><form><input id=user><input id=pw type=password></form>",
             "/asks": check.asksPage, "/auth": { body: "<title>signed in</title>", auth: "admin:secret" },
             "/leave": "<title>leave</title><input id=f><script>onbeforeunload = e => { e.preventDefault(); e.returnValue = '' }</script>",
@@ -5700,6 +5771,7 @@ QtObject {
     property bool opened: false
     property int at: -1
     property int failures: 0
+    property string actFailure: ""     // what this step's act threw, "" if nothing
     property real began: 0
     property var view: app.currentView
     property int relaunches: 0         // the extension checks: WebStore.relaunches() before Reopen now
@@ -5750,11 +5822,13 @@ QtObject {
         const run = () => {
             if (s.key)
                 check.probe.press(s.key, s.mods ?? 0, s.text ?? "");
+            actFailure = "";
             if (s.act) {
                 try {
                     s.act();
                 } catch (e) {
                     check.probe.report("     " + e);
+                    actFailure = String(e);
                 }
             }
             settle.interval = s.wait ?? 600;
@@ -5786,9 +5860,10 @@ QtObject {
             }
         };
         let ok = false;
-        // a check that throws fails, rather than stopping the run
+        // a check that throws fails, rather than stopping the run; so does a step whose act threw, which an
+        // `expect: () => true` passed with nothing done
         try {
-            ok = s.expect();
+            ok = actFailure === "" && s.expect();
         } catch (e) {
             check.probe.report("     " + e);
         }

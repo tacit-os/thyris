@@ -777,9 +777,12 @@ WebEngineView {
             // only frames of this host run them: not other hosts' embeds (video, payment, sign-in), nor
             // the old page's new frames after a navigation that never commits (a download, a 204)
             const host = ((/^[a-z][a-z0-9+.-]*:\/\/(?:[^\/?#@]*@)?([^\/:?#]+)/i.exec(String(url)) ?? [])[1] ?? "").toLowerCase()
+            // String(url) has a name that is not ASCII decoded (bücher.de), the page's location as punycode
+            // (xn--bcher-kva.de): such a name goes through the page's own URL parser, as its location did
+            const name = /[^\x00-\x7f]/.test(host) ? "new URL(" + JSON.stringify("http://" + host) + ").hostname" : JSON.stringify(host)
             const s = WebEngine.script()
             s.name = "adblock-scriptlets"
-            s.sourceCode = "if (location.hostname === " + JSON.stringify(host) + ") {\n" + c.script + "\n}"
+            s.sourceCode = "if (location.hostname === " + name + ") {\n" + c.script + "\n}"
             s.injectionPoint = WebEngineScript.DocumentCreation
             s.worldId = WebEngineScript.MainWorld
             s.runsOnSubFrames = true

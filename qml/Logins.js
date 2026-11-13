@@ -17,7 +17,9 @@ var helpers = "const input = e => e instanceof HTMLInputElement, secret = e => i
 
 // Run in the browser's script world at the start of each top document. Messages: field({ origin, role }), role
 // "password", "user" (the user name field of a form with a password field), "code" (a one-time code's field: autocomplete
-// one-time-code, or named, labelled or hinted as a code, OTP or PIN; the notch offers a code from your phone for it) or ""
+// one-time-code, or named, labelled or hinted as a code, OTP or PIN, but not a ZIP or postal code, a promo, coupon,
+// voucher, gift or discount code or a card's security code, by its words or its autocomplete; the notch offers a code
+// from your phone for it) or ""
 // when such a field loses the focus to
 // the page (not when the page loses it to the browser, as F6 to the Fill rows does: it comes back with the page's);
 // submitted({ origin, user, password }) for a form sent with a password in it by you, the new password of a sign-up or
@@ -32,8 +34,10 @@ function watcher(saves) {
     return "(() => { if (window !== window.top) return; " + helpers
         + " let n = 0; const send = (method, m) => { if (typeof qt === 'undefined' || !qt.webChannelTransport) return;"
         + " qt.webChannelTransport.send(JSON.stringify({ type: 6, object: 'logins', method: method, args: [JSON.stringify(m)], id: ++n })) };"
-        + " const code = e => input(e) && /^(text|tel|number)$/.test(e.type) && (e.autocomplete === 'one-time-code'"
-        + " || /(^|[^a-z])(otp|totp|2fa|mfa|one.?time|code|pin|verification)([^a-z]|$)/i.test([e.name, e.id, e.placeholder, e.getAttribute('aria-label')].join(' ')));"
+        + " const code = e => { if (!input(e) || !/^(text|tel|number)$/.test(e.type)) return false; if (e.autocomplete === 'one-time-code') return true;"
+        + " const words = [e.name, e.id, e.placeholder, e.getAttribute('aria-label')].join(' ');"
+        + " return /(^|[^a-z])(otp|totp|2fa|mfa|one.?time|code|pin|verification)([^a-z]|$)/i.test(words)"
+        + " && !/zip|postal|post.?code|promo|coupon|voucher|gift|discount|cvc|cvv|csc/i.test(words) && !/(^|\\s)(postal-code|cc-[a-z-]+)(\\s|$)/.test(e.autocomplete) };"
         + " const role = e => { if (secret(e)) return 'password'; if (code(e)) return 'code'; if (!plain(e)) return ''; const list = fieldsOf(e), p = list.find(secret);"
         + " return p && userFor(list, p) === e ? 'user' : '' };"
         + " const target = e => e.composedPath()[0] || e.target;"

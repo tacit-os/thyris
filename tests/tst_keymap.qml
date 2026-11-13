@@ -36,6 +36,31 @@ TestCase {
     }
 
     // PLAN.md 3.7 and 5: Earlier's views are page-first keys
+    function test_theDigitRowByWhereItIsOnAzerty() {
+        // xkb's key codes: 10 is the 1 key, 19 the 0 key, 15 the 6 key (AZERTY's -); 0x0c0 is Qt.Key_Agrave
+        compare(KeyMap.pageKey(Qt.Key_Ampersand, Qt.AltModifier, 10).arg, 1, "AZERTY's Alt+& is Alt+1: the first Always page");
+        compare(KeyMap.pageKey(0x0c9, Qt.AltModifier, 11).arg, 2, "Alt+é, past ASCII, is Alt+2");
+        compare(KeyMap.pageKey(0x0c7, Qt.AltModifier, 18).arg, 9, "Alt+ç is Alt+9");
+        compare(KeyMap.pageKey(0x0c0, Qt.ControlModifier, 19).action, "zoomReset", "Ctrl+à is Ctrl+0");
+        compare(KeyMap.pageKey(Qt.Key_Minus, Qt.ControlModifier, 15).action, "zoomOut", "AZERTY's - on the 6 key still zooms out");
+        compare(KeyMap.pageKey(Qt.Key_0, Qt.ControlModifier, 19).action, "zoomReset", "a US keyboard's, as before");
+        compare(KeyMap.pageKey(Qt.Key_Ampersand, Qt.AltModifier), null, "with no key code, a symbol is only itself");
+        compare(KeyMap.pageKey(Qt.Key_Ampersand, Qt.NoModifier, 10), null, "the plain key is the page's");
+        compare(KeyMap.pageKey(Qt.Key_Q, Qt.AltModifier, 24), null, "only the digit row");
+    }
+
+    function test_aLetterOfAnotherScriptIsTheLatinOneAtItsPlace() {
+        // 54 is xkb's key code of the C key; Qt names a letter it has no key for by its upper-case code point
+        compare(KeyMap.latinLetter(0x421, 54), Qt.Key_C, "a Russian layout's С (Alt+C in find)");
+        compare(KeyMap.latinLetter(0x3a8, 54), Qt.Key_C, "a Greek layout's Ψ");
+        compare(KeyMap.latinLetter(0x424, 38), Qt.Key_A, "Ф on the A key");
+        compare(KeyMap.latinLetter(Qt.Key_C, 54), Qt.Key_C, "a Latin layout's C, as before");
+        compare(KeyMap.latinLetter(Qt.Key_J, 54), Qt.Key_J, "Dvorak's J where QWERTY has C stays J: its C is elsewhere");
+        compare(KeyMap.latinLetter(0x11e, 54), 0x11e, "a Latin letter past ASCII (Turkish Ğ) is itself");
+        compare(KeyMap.latinLetter(Qt.Key_Comma, 58), Qt.Key_Comma, "a symbol is itself");
+        compare(KeyMap.latinLetter(0x421, 0), 0x421, "with no key code, the letter is itself");
+    }
+
     function test_earlierKeys() {
         const e = (key, mods) => { const k = KeyMap.pageKey(key, mods); return k ? k.action + ":" + k.arg : "" };
         compare(e(Qt.Key_H, Qt.ControlModifier), "earlier:history");

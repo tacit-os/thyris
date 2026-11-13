@@ -263,7 +263,9 @@ Item {
                     selectByMouse: true
                     renderType: Text.NativeRendering
                     onTextChanged: if (bar.opened) bar.refresh()
-                    onActiveFocusChanged: if (!activeFocus) bar.dismiss()
+                    // the window losing focus (switching to another app, the pointer on another window) is not leaving the
+                    // card, as with the address card
+                    onActiveFocusChanged: if (!activeFocus && Window.active) bar.dismiss()
 
                     Label {
                         anchors { left: parent.left; verticalCenter: parent.verticalCenter }
@@ -285,7 +287,8 @@ Item {
                             bar.step(1);
                         else if (event.key === Qt.Key_Up)
                             bar.step(-1);
-                        else if (event.key === Qt.Key_Tab)
+                        // Shift+Tab too: left to Qt it moved the focus on, which closed the card
+                        else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)
                             bar.flip();
                         else if (event.key === Qt.Key_Delete && (event.modifiers & Qt.ShiftModifier))
                             bar.forget();

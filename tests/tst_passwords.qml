@@ -31,6 +31,40 @@ TestCase {
                "what it fills goes in as JSON, never as script");
     }
 
+    // the role the watch sends for a text field taking the focus, the script run against a stand-in page that has only it
+    function roleOf(field) {
+        const sent = [], on = {};
+        class Input {
+            constructor(a) { Object.assign(this, { type: "text", name: "", id: "", placeholder: "", autocomplete: "", form: null }, a) }
+            getAttribute(n) { return n === "aria-label" ? this.label ?? null : null }
+            getRootNode() { return { querySelectorAll: () => [this] } }
+        }
+        const e = new Input(field), win = {};
+        win.top = win;
+        new Function("window", "addEventListener", "HTMLInputElement", "qt", "location", "document", "return " + Logins.watcher(false))(
+            win, (type, f) => on[type] = f, Input, { webChannelTransport: { send: m => sent.push(JSON.parse(JSON.parse(m).args[0])) } },
+            { origin: "https://pay.test" }, { hasFocus: () => true });
+        on.focusin({ isTrusted: true, composedPath: () => [e], target: e });
+        return sent.length > 0 ? sent[0].role : "";
+    }
+
+    function test_theNotchOffersAPhoneCodeForAOneTimeCodesFieldOnly() {
+        compare(roleOf({ autocomplete: "one-time-code" }), "code");
+        compare(roleOf({ name: "otp" }), "code");
+        compare(roleOf({ id: "verification-code", type: "tel" }), "code");
+        compare(roleOf({ name: "otc", placeholder: "Enter code" }), "code", "Microsoft's");
+        compare(roleOf({ name: "otc", label: "Security code" }), "code", "a bank's or Microsoft's code from the phone, called a security code");
+        compare(roleOf({ name: "pin", type: "number" }), "code");
+        compare(roleOf({ name: "postal_code", placeholder: "ZIP code" }), "", "a ZIP or postal code is not one");
+        compare(roleOf({ name: "billing-postal-code" }), "");
+        compare(roleOf({ name: "code", autocomplete: "postal-code" }), "", "nor what autocomplete says is a postal code");
+        compare(roleOf({ name: "promo_code", placeholder: "Promo code" }), "", "nor a promo, coupon or gift card's code");
+        compare(roleOf({ placeholder: "Coupon code" }), "");
+        compare(roleOf({ name: "cvv", placeholder: "Security code" }), "", "nor a card's security code");
+        compare(roleOf({ name: "security_code", autocomplete: "cc-csc" }), "");
+        compare(roleOf({ name: "search" }), "", "a plain text field with no password is nothing");
+    }
+
     function test_aMessageIsReadOnlyForThePagesOwnOrigin() {
         const m = Logins.parse(JSON.stringify({ origin: "https://github.com", user: "abdul", password: "x" }), "https://github.com");
         compare(m.user, "abdul");

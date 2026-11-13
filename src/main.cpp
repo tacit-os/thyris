@@ -148,11 +148,20 @@ int main(int argc, char *argv[]) {
         Engine::hunspellOverride = shotData->path() + QStringLiteral("/hunspell");
         // the real ~/Downloads is never written
         Disk::folderOverride = shotData->path() + QStringLiteral("/Downloads");
+        // a host whose name is not ASCII prints decoded only under a top-level domain on Qt's IDN list (bücher.de does,
+        // bücher.test did not): .test joins it, so such a host of the checks' reads as a real one does
+        QUrl::setIdnWhitelist(QUrl::idnWhitelist() << QStringLiteral("test"));
         // ad blocking on a filter list of the check's own: requests to ads.test refused, and div.check-ad hidden
-        // on 127.0.0.1's pages only
+        // on 127.0.0.1's pages only; and a scriptlet of the check's own (check-mark, in resources.json) that marks the
+        // page on bücher.test, a host whose name is not ASCII, named as lists name such hosts (xn--bcher-kva.test)
         const QString lists = shotData->path() + QStringLiteral("/browser/adblock/lists");
         QFile list(lists + QStringLiteral("/check.txt"));
-        if (!QDir().mkpath(lists) || !list.open(QIODevice::WriteOnly) || list.write("||ads.test^\n127.0.0.1##div.check-ad\n") < 0) {
+        QFile resources(shotData->path() + QStringLiteral("/browser/adblock/resources.json"));
+        const QByteArray mark = R"([{"name": "check-mark.js", "kind": {"mime": "application/javascript"}, "content": ")"
+            + QByteArray("document.documentElement.dataset.scriptlet = 'ran';").toBase64() + "\"}]";
+        if (!QDir().mkpath(lists) || !list.open(QIODevice::WriteOnly)
+            || list.write("||ads.test^\n127.0.0.1##div.check-ad\nxn--bcher-kva.test##+js(check-mark)\n") < 0
+            || !resources.open(QIODevice::WriteOnly) || resources.write(mark) < 0) {
             std::fprintf(stderr, "browser --check-engine: cannot write the check's filter list\n");
             return 2;
         }

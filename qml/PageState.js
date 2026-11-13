@@ -49,6 +49,13 @@ function pageHost(url) {
     return m ? m[1].toLowerCase().replace(/^www\./, "") : "";
 }
 
+// The address as the editing card holds it (and the notch's sheet is given it): a data: address past 32 k characters
+// (a page a script made, up to Chromium's 2 MB) is cut there, with "…": the card lays the whole of it out as one
+// paragraph, and 2 MB took 3 s to draw, the window stuck (32 k: 18 ms). Its first lines, all the card shows, are kept.
+function cardAddress(url) {
+    return url.length > 32768 && /^data:/i.test(url) ? url.slice(0, 32768) + "\u2026" : url;
+}
+
 // A page's alert, confirm or prompt (PLAN.md 8j) names the top frame's host, never a frame's.
 function says(url) {
     return (pageHost(url) || "This page") + " says";

@@ -68,6 +68,8 @@ PageItem {
         target: settings
         function onErrorPageEnabledChanged() { setErrorPages(settings.errorPageEnabled) }
     }
+    // scripts off as the view is made (the Retry fetcher's): Chromium takes it when the page is made, after this
+    Component.onCompleted: if (!settings.javascriptEnabled) setScripts(false)
     signal selectClientCertificate(var selection)
     signal desktopMediaRequested(var request)
     // A screen share (PageItem.desktopCaptureRequested) as Qt's desktop media request. Chromium lists no screens or

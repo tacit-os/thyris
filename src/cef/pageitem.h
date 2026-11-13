@@ -107,6 +107,8 @@ public:
     // Qt's errorPageEnabled as the shim's settings say it: off, a failed main-frame load commits nothing (needs Opsis's
     // CEF build, errorpages-patch.py)
     Q_INVOKABLE void setErrorPages(bool on);
+    // Qt's javascriptEnabled as the shim's settings say it when the view is made: off, the page it makes runs no script
+    Q_INVOKABLE void setScripts(bool on) { m_scripts = on; }
     // The page as a PDF at `path` (Printing::toPdf): paper in inches as portrait, margins in inches on every side, pages
     // `from`-`to` (1-based; from 0 for all), the page's backgrounds or not. pdfPrintingFinished answers.
     void printToPdf(const QString &path, const QSizeF &paper, bool landscape, qreal margin, int from, int to, bool backgrounds);
@@ -350,6 +352,7 @@ private:
     QUrl m_url;
     QString m_restore;      // a history to restore once the page is made (restoreHistory)
     bool m_errorPages = true;   // setErrorPages, for a client made later
+    bool m_scripts = true;      // setScripts, for the page made next (openNow)
     bool m_restorePending = false;  // this page is made for a history, so it starts on no address
     QString m_title;
     QString m_lastWebAuthnAnswer;      // the checks': "<request> <op>", never the PIN

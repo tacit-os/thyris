@@ -49,8 +49,9 @@ Item {
 
     // on a failure (PLAN.md 8f-8h) the address that failed, with the card's "!"
     readonly property var failure: view ? view.failure ?? null : null
-    // the browser's own pages as PLAN.md 3.17's table gives them, without the "/" the engine adds (browser://settings)
-    readonly property string url: view ? (failure ? failure.url : String(view.url).replace(/^(browser:\/\/[a-z]+)\/$/i, "$1")) : ""
+    // the browser's own pages as PLAN.md 3.17's table gives them, without the "/" the engine adds (browser://settings);
+    // a long data: address cut (PageState.cardAddress)
+    readonly property string url: view ? (failure ? failure.url : PageState.cardAddress(String(view.url).replace(/^(browser:\/\/[a-z]+)\/$/i, "$1"))) : ""
     readonly property bool insecure: !failure && PageState.insecure(url)
     readonly property bool warned: insecure || failure !== null || (view ? view.questioned ?? null : null) !== null
     readonly property bool errorTone: insecure || (view ? view.questioned ?? null : null) !== null || failure !== null && failure.tone === "error"

@@ -3759,6 +3759,9 @@ void PageItem::openNow() {
     // white where a page sets no ground (backgroundColor), as Qt WebEngine and every browser draw it; an off-screen page's
     // default is see-through, and the window's frost showed behind such pages (2026-10-07, browserbench.org)
     settings.background_color = CefColorSetARGB(255, m_background.red(), m_background.green(), m_background.blue());
+    // a view made with scripts off (the Retry fetcher in Main.qml) runs none of its page's
+    if (!m_scripts)
+        settings.javascript = STATE_DISABLED;
     CefRuntime::pageOpening();
     // blank until its scripts are in (PageClient::loadPending), then the address
     m_restorePending = !m_restore.isEmpty();

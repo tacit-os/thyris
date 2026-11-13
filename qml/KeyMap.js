@@ -101,9 +101,29 @@ for (const k of pageFirst)
     for (const s of k.seqs)
         pageIndex[s] = k;
 
-// The P entry for a key the page left unhandled, or null.
-function pageKey(key, modifiers) {
-    return pageIndex[sequence(key, modifiers)] ?? null;
+// The P entry for a key the page left unhandled, or null. A key of the digit row that names nothing as it was typed is
+// its digit: AZERTY types & é " ' ( - è _ ç à there unshifted, so Alt+1 came as Alt+& and Ctrl+0 as Ctrl+à. One that
+// names something keeps it (AZERTY's Ctrl+- zooms out, not Ctrl+6). `scanCode` is the event's nativeScanCode, xkb's key
+// code on Wayland (the evdev code + 8): 10 to 19 are 1 to 0.
+function pageKey(key, modifiers, scanCode) {
+    const k = pageIndex[sequence(key, modifiers)];
+    if (k)
+        return k;
+    if (scanCode >= 10 && scanCode <= 19)
+        return pageIndex[sequence(0x30 + (scanCode - 9) % 10, modifiers)] ?? null;
+    return null;
+}
+
+// A letter key as Qt names a Latin one (Qt.Key_A to Key_Z). On a layout of another script (Cyrillic, Greek, Arabic), whose
+// letters Qt gives with Alt as their own code points (with Ctrl it finds the Latin one itself), it is the letter a QWERTY
+// keyboard has at that place, by its xkb key code (`scanCode`, as in pageKey); any other key is itself.
+function latinLetter(key, scanCode) {
+    if (key < 0x370 || key >= 0x01000000)
+        return key;
+    for (const [first, row] of [[24, "QWERTYUIOP"], [38, "ASDFGHJKL"], [52, "ZXCVBNM"]])
+        if (scanCode >= first && scanCode < first + row.length)
+            return row.charCodeAt(scanCode - first);
+    return key;
 }
 
 var typed = [

@@ -386,8 +386,9 @@ Window {
             const id = downloadModel.requested(download, !v ? "" : v.holder ? v.holder.opener?.pageId ?? "" : empty ? v.openedBy.pageId ?? "" : v.pageId ?? "", from, false);
             // not one held back as insecure: that waits for Keep
             if (empty && id !== "" && sessionModel.downloadById(id)?.state !== "blocked") {
+                // the profile's one handler is the first window's: the page may be another window's
                 const page = v.pageId;
-                Qt.callLater(() => { if (views[page] === v) dropEmptyPage(page) });
+                Qt.callLater(() => { const w = ownerOf(page) ?? root; if (w.views[page] === v) w.dropEmptyPage(page) });
             }
         }
     }
@@ -2597,9 +2598,11 @@ Window {
     }
 
     // A page a link or window.open made for a file, with nothing shown: it closes as Chrome's does, and the page whose link
-    // it was comes back if this one was on screen. It leaves no closed page (Ctrl+Shift+T).
+    // it was comes back if this one was on screen: its opener in its thread, or the Always page it came from (a link from
+    // one starts a thread of its own, with no opener). It leaves no closed page (Ctrl+Shift+T).
     function dropEmptyPage(pageId) {
-        const to = sessionModel.backTo(pageId);
+        const by = views[pageId]?.openedBy?.pageId ?? "";
+        const to = sessionModel.backTo(pageId) || (sessionModel.pages[by] ? by : "");
         if (to && sessionModel.currentPage === pageId)
             show(to);
         dropViews(sessionModel.closePage(pageId, true));
@@ -3033,7 +3036,7 @@ Window {
     }
     // P keys: only those the page left unhandled arrive here; so do F keys (`/`), which a field would have taken
     function pageKey(event) {
-        const k = KeyMap.pageKey(event.key, event.modifiers) ?? KeyMap.typedKey(event.text, event.modifiers);
+        const k = KeyMap.pageKey(event.key, event.modifiers, event.nativeScanCode) ?? KeyMap.typedKey(event.text, event.modifiers);
         // "/ opens find" Off in the site panel: `/` stays the site's
         const kept = k !== null && k.text === "/" && root.currentView !== null
             && siteModel.choice(Asks.originOf(String(root.currentView.url)), "slash") === "off";
@@ -3381,6 +3384,18 @@ Window {
     Connections {
         target: root.browserRun && root.browserRun.kind === "firefox" ? Zen : null
         function onRead(found) {
+            // its places did not copy or read: nothing came, and nothing more comes (no saved)
+            if (found.failure) {
+                const text = "Thyris couldn't read " + root.browserRun.browser + "'s profile, so nothing was brought over.";
+                root.browserRun = null;
+                if (welcomePage.phase === "bringing" && welcomePage.mode === "") {
+                    welcomePage.notice = text;
+                    welcomePage.phase = "arrive";
+                } else {
+                    root.showNotice({ text: text, action: "", where: "card" }, 8000);
+                }
+                return;
+            }
             root.setKind("bookmarks", { done: (found.bookmarks ?? []).length, total: (found.bookmarks ?? []).length });
             root.setKind("history", { done: (found.history ?? []).length, total: (found.history ?? []).length, waiting: "" });
             if (found.tabs)

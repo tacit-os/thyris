@@ -1,4 +1,5 @@
 import QtQuick
+import "KeyMap.js" as KeyMap
 import "RailRows.js" as RailRows
 
 // Find in page in the address card (PLAN.md 3.8 8e): the address slot becomes the find field, with the
@@ -90,7 +91,8 @@ Item {
                         card.finder.step(back);
                     else if (event.key === Qt.Key_Down || event.key === Qt.Key_Up)
                         card.finder.step(event.key === Qt.Key_Up);
-                    else if (event.key === Qt.Key_C && (event.modifiers & Qt.AltModifier))
+                    // where C is, on a Cyrillic or Greek layout too
+                    else if (KeyMap.latinLetter(event.key, event.nativeScanCode) === Qt.Key_C && (event.modifiers & Qt.AltModifier))
                         card.finder.toggleCase();
                     else if (event.key !== Qt.Key_Tab && event.key !== Qt.Key_Backtab)
                         return;

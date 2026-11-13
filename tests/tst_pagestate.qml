@@ -14,6 +14,18 @@ TestCase {
         compare(PageState.hostOf("about:blank"), "");
     }
 
+    function test_aLongDataAddressIsCutForTheCard() {
+        const big = "data:text/html;base64," + "PGgxPmhpPC9oMT4K".repeat(131072);     // 2 MB, one unbroken word
+        const cut = PageState.cardAddress(big);
+        compare(cut.length, 32769, "32 k characters and the ellipsis: the card lays out what it holds as one paragraph");
+        verify(cut.startsWith(big.slice(0, 32768)) && cut.endsWith("\u2026"), "its start kept, the cut said");
+        const page = "data:text/html," + encodeURIComponent("<p>" + "open sesame ".repeat(340) + "okay</p>");
+        compare(PageState.cardAddress(page), page, "a data: page of a few kB whole (the engine check's)");
+        const long = "https://example.com/?q=" + "x".repeat(40000);
+        compare(PageState.cardAddress(long), long, "only data: addresses: a long https one is the page's real address");
+        compare(PageState.cardAddress(""), "");
+    }
+
     function test_sameSite() {
         verify(PageState.sameSite("https://claude.ai/new", "https://claude.ai/login/callback?code=1"), "the same host");
         verify(PageState.sameSite("https://a.claude.ai/x", "https://claude.ai/"), "one host under the other");

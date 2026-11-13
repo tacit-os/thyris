@@ -6,7 +6,8 @@ QtObject {
     enum UnknownUrlSchemePolicy { DisallowUnknownUrlSchemes = 1, AllowUnknownUrlSchemesFromUserInteraction = 2,
         AllowAllUnknownUrlSchemes = 3 }
 
-    // a view's settings: kept, and not applied to the page yet (slice 3)
+    // a view's settings: kept, and not applied to the page yet (slice 3), but errorPageEnabled and, as the view is
+    // made, javascriptEnabled (WebEngineView.qml)
     property bool javascriptEnabled: true
     property bool errorPageEnabled: true
     property bool pdfViewerEnabled: true
