@@ -66,8 +66,9 @@ QtObject {
     // The one switch for the window's glass: Hyprland's rule `opacity 0.85 0.77` for class browser (as
     // for zen) makes the whole window this opaque over its blurred wallpaper, so the app draws itself
     // opaque, and shot mode lays the wallpaper over the window at 1 - windowOpacity to show the same.
-    // Without the rule set it to 1: the window is then plain opaque terminal.
-    readonly property real windowOpacity: 0.85
+    // Without the rule set it to 1: the window is then plain opaque terminal. The CEF build's class,
+    // browser-cef, has no rule (hypr/browser.lua): Thyris stays opaque.
+    readonly property real windowOpacity: String(Engine.versions.webEngine).startsWith("CEF") ? 1 : 0.85
     // Rows: current as the Claude app's rail; hover as Files' rows (10 %); pressed while the button is held on one
     readonly property color rowCurrent: transparentize(onSurface, 0.86)
     readonly property color rowHover: transparentize(onSurface, 0.90)

@@ -4,6 +4,7 @@
 #include "passwords.h"
 #include "zen.h"
 #include "chromeimport.h"
+#include "disk.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -17,6 +18,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QUrl>
 #include <QGuiApplication>
 #include <QJsonArray>
@@ -311,6 +313,40 @@ QVariantMap EngineCheck::filesHolding(const QString &text) const {
             holding << QDir(root).relativeFilePath(path);
     }
     return {{QStringLiteral("files"), files}, {QStringLiteral("bytes"), bytes}, {QStringLiteral("holding"), holding}};
+}
+
+QVariantMap EngineCheck::filesWritten(qint64 since, const QString &text, const QColor &icon) const {
+    // main.cpp sets both to the throwaway dir in check mode, the cache inside the data dir, and Downloads there too
+    const QString data = qEnvironmentVariable("XDG_DATA_HOME"), cache = qEnvironmentVariable("XDG_CACHE_HOME");
+    if (data.isEmpty())
+        return {};
+    QStringList roots{data};
+    if (!cache.isEmpty() && !cache.startsWith(data + u'/'))
+        roots << cache;
+    const QString downloads = Disk::folderOverride + u'/';
+    const QByteArray utf8 = text.toUtf8();
+    const QByteArray utf16(reinterpret_cast<const char *>(text.utf16()), text.size() * 2);
+    QStringList written, holding;
+    for (const QString &root : roots) {
+        QDirIterator it(root, QDir::Files | QDir::Hidden | QDir::NoSymLinks, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString path = it.next();
+            if (path.startsWith(downloads) || it.fileInfo().lastModified().toMSecsSinceEpoch() < since)
+                continue;
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly))
+                continue;
+            const QByteArray all = file.readAll();
+            const QString name = QDir(data).relativeFilePath(path);
+            written << name;
+            // an icon is small; a larger file is not read as a picture
+            const QImage picture = all.size() < (1 << 20) ? QImage::fromData(all) : QImage();
+            if (all.contains(utf8) || all.contains(utf16)
+                || (!picture.isNull() && picture.pixelColor(picture.width() / 2, picture.height() / 2).rgb() == icon.rgb()))
+                holding << name;
+        }
+    }
+    return {{QStringLiteral("written"), written}, {QStringLiteral("holding"), holding}};
 }
 
 int EngineCheck::serve(const QVariantMap &pages) {

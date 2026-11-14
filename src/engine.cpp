@@ -153,6 +153,9 @@ QString Engine::keptIcon(const QString &address) {
     const QString file = iconFile(address);
     if (QFileInfo::exists(file))
         return QUrl::fromLocalFile(file).toString();
+    // a private window's: held, or not to be had (asked for here, it would be fetched in the main profile and saved)
+    if (m_private.contains(address))
+        return m_held.value(address);
     // asked once the binding that wants it is done; iconRevision brings it back
     QMetaObject::invokeMethod(this, [this, address] { keepIcon(address); }, Qt::QueuedConnection);
     return QString();
@@ -168,9 +171,14 @@ void Engine::iconUnloaded(const QString &address, bool unloaded) {
         m_unloaded.remove(address);
 }
 
-void Engine::keepIcon(const QString &address) {
-    if (!address.startsWith(faviconScheme) || m_keeping.contains(address) || m_unanswered.contains(address)
-        || m_unloaded.contains(address))
+void Engine::keepIcon(const QString &address, bool offTheRecord) {
+    if (!address.startsWith(faviconScheme))
+        return;
+    if (offTheRecord)
+        m_private.insert(address);
+    else if (m_private.contains(address))
+        return;
+    if (m_keeping.contains(address) || m_unanswered.contains(address) || m_unloaded.contains(address) || m_held.contains(address))
         return;
     const QString file = iconFile(address);
     if (QFileInfo::exists(file)) {
@@ -191,12 +199,21 @@ void Engine::keepIcon(const QString &address) {
         const QImage image = factory ? factory->image() : QImage();
         delete factory;
         response->deleteLater();
-        if (image.isNull() || !QDir().mkpath(QFileInfo(file).path()) || !image.save(file, "PNG")) {
+        // a private window's in memory, as it was asked or since
+        const bool held = m_private.contains(address);
+        if (image.isNull() || (!held && (!QDir().mkpath(QFileInfo(file).path()) || !image.save(file, "PNG")))) {
             m_unanswered.insert(address);
             return;
         }
+        if (held) {
+            QByteArray png;
+            QBuffer buffer(&png);
+            buffer.open(QIODevice::WriteOnly);
+            image.save(&buffer, "PNG");
+            m_held.insert(address, QStringLiteral("data:image/png;base64,") + QString::fromLatin1(png.toBase64()));
+        }
         ++m_iconRevision;
-        emit iconKept(address, QUrl::fromLocalFile(file).toString());
+        emit iconKept(address, m_held.value(address, QUrl::fromLocalFile(file).toString()));
     });
 }
 

@@ -154,7 +154,8 @@ WebEngineView {
     onIconChanged: {
         session.update(pageId, { icon: String(icon) })
         visits.reicon(String(url), String(icon))
-        // the copy every favicon is drawn from, saved while this view is live (Engine.keepIcon)
+        // the copy every favicon is drawn from, saved while this view is live (Engine.keepIcon); a private window's is
+        // held in memory, never saved
         if (iconHeld !== "") {
             Engine.iconUnloaded(iconHeld, false)
             iconHeld = ""
@@ -162,7 +163,7 @@ WebEngineView {
         if (lifecycleState === WebEngineView.LifecycleState.Discarded)
             holdIcon()
         else
-            Engine.keepIcon(String(icon))
+            Engine.keepIcon(String(icon), profile.offTheRecord)
     }
     // the address Engine counts this view as holding while it is unloaded: Qt's favicon provider must not be asked for
     // it then (it crashed in WebContentsAdapter::icon())

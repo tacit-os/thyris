@@ -124,6 +124,13 @@ QtObject {
           key: Qt.Key_T, mods: ctrl, expect: () => newPageBar.opened === true },
         { name: "Esc closes the bar", key: Qt.Key_Escape, expect: () => newPageBar.opened === false },
         { name: "Ctrl+T opens the bar again", key: Qt.Key_T, mods: ctrl, expect: () => newPageBar.opened === true },
+        // Thyris stays opaque (the owner's decision n7): no Hyprland opacity rule names browser-cef (hypr/browser.lua)
+        { name: "on CEF the window is drawn as opaque, as Hyprland leaves it: Theme.windowOpacity 1, so the bar's frost takes nothing back out",
+          expect: () => { const frosts = [], cef = String(Engine.versions.webEngine).startsWith("CEF");
+              const walk = item => { for (const c of item.children) { if (c.solid !== undefined && c.through !== undefined) frosts.push(c); walk(c) } };
+              walk(newPageBar);
+              probe.report("     " + Engine.versions.webEngine + ": windowOpacity " + Theme.windowOpacity + ", the bar's frost takes back " + frosts.map(f => f.through.toFixed(2)).join(" "));
+              return frosts.length > 0 && (cef ? Theme.windowOpacity === 1 && frosts.every(f => f.through === 0) : Theme.windowOpacity === 0.85) } },
         { name: "Ctrl+L over the open bar swaps it for the address card",
           key: Qt.Key_L, mods: ctrl, expect: () => newPageBar.opened === false && address.editing === true },
         // offscreen the window is never active, so a card that lost the focus stays drawn; Esc shows it
@@ -521,6 +528,19 @@ QtObject {
               && !view.loading && view.fallback === "" && view.settings.errorPageEnabled && check.starts.join() === "https://silent.test:" + check.port + "/plain" },
         { name: "(the limit back at 30 s; Go back)", wait: 300, act: () => { view.replyLimit = 30000; view.leave(true) },
           expect: () => !view.failure && view.title === "plain" },
+        // a new page's first site is its first entry once it has committed, not only once it has loaded
+        { name: "(a new page whose first site is in and still loading: an image the server never answers)", wait: 1500,
+          act: () => app.go(check.served("heavy", "/heavy"), "new", "", "heavy"),
+          expect: () => view.title === "heavy" && view.loading && String(view.url) === check.served("heavy", "/heavy") },
+        // opened as a Saved or History pick opens it: a typed address's https attempt would meet another bug here (the
+        // first site's load, stopped by it, ends the attempt, and no http load follows). Back itself is not taken: on CEF a
+        // page left while its load was under way (this image never answers) did not come back within 13 s, its first site
+        // or not (2026-11-13), another matter
+        { name: "an address opened there meanwhile opens after that site, not in its place: Back has the first site to go to", wait: 2000,
+          act: () => app.go(check.served("plain", "/plain"), "navigate"),
+          expect: () => { probe.report("     " + view.title + ", loading " + view.loading + ", can go back " + view.canGoBack + ", history " + check.historyUrls(view).join(" "));
+              return view.title === "plain" && !view.loading && view.canGoBack
+                  && check.historyUrls(view).join() === [check.served("heavy", "/heavy"), check.served("plain", "/plain")].join() } },
         { group: "asks" },
         check.server,
         // a thread to look away to; the closes at the end take the asking page and two more, and need one left
@@ -1747,8 +1767,13 @@ QtObject {
         { name: "at 20 s it asks in the notch about this browser's process: Thyris isn't answering, Close it or Wait", wait: 11500,
           expect: () => { const a = check.asked(); probe.report("     " + probe.fixtureText("standin/qs.log").trim().split("\n").join(" / "));
               return probe.launched().code === -1 && a.length === 1 && a[0].pid === probe.pid() && a[0].cls === "thyris" && a[0].buttons.join("|") === "close|wait" } },
-        { name: "answered Wait: nothing is ended, and it asks again 20 s later", wait: 21500,
-          expect: () => probe.launched().code === -1 && /^answered wait$/m.test(probe.fixtureText("standin/qs.log")) && check.asked().length === 2 },
+        { name: "answered Wait: nothing is ended, and 20 s later it asks again, a prompt of its own (its pid, a since of its own) that a shell shows, not the one it answered", wait: 21500,
+          expect: () => { const a = check.asked(), shown = check.shownPrompts();
+              probe.report("     " + probe.fixtureText("standin/qs.log").split("\n").filter(l => /^(shown|left|answered) /.test(l)).join(" / "));
+              return probe.launched().code === -1 && a.length === 2 && a[1].id === a[0].id && a[1].since > a[0].since
+                  && shown.length === 2 && check.answeredPrompts().length === 1 } },
+        { name: "while that one is up, it is offered again every 5 s as it was (the shell holds it only in memory, and a reload lost it)", wait: 6000,
+          expect: () => { const a = check.asked(); return probe.launched().code === -1 && a.length >= 3 && a.slice(2).every(x => x.id === a[1].id && x.since === a[1].since) } },
         { name: "once this browser answers, the link opens, the prompt leaves the notch and the start exits 0", wait: 2000,
           act: () => app.instance.holding = false,
           expect: () => check.launchedOk() && session.current.url === check.served("held", "/plain") && session.current.from === "foot"
@@ -1771,14 +1796,22 @@ QtObject {
         }
     }
     // The shell for the instance group's busy browser: each `qs ... ipc call island <function> <argument>` is a line of
-    // qs.log beside it; a not-answering prompt is shown, and the first one answered Wait a second later, as a person would
+    // qs.log beside it. A not-answering prompt is one by its id and since, as in the shell (IslandController.showNotAnswering):
+    // a new one is shown ("shown <id> <since>"), one answered already is left as it is ("left ..."), and the first one is
+    // answered Wait a second later, as a person would ("answered ...")
     readonly property string standInShell: "#!/bin/sh\n"
         + "log=$(dirname \"$0\")/qs.log\n"
         + "printf '%s\\n' \"$*\" >> \"$log\"\n"
         + "case \"$*\" in *' notAnswering '*)\n"
-        + "    if [ \"$(grep -c ' notAnswering ' \"$log\")\" = 1 ]; then\n"
-        + "        fifo=$(printf '%s\\n' \"$*\" | sed 's/.*\"fifo\":\"\\([^\"]*\\)\".*/\\1/')\n"
-        + "        (sleep 1; printf 'wait\\n' > \"$fifo\"; echo 'answered wait' >> \"$log\") >/dev/null 2>&1 &\n"
+        + "    key=\"$(printf '%s\\n' \"$*\" | sed -n 's/.*\"id\":\"\\([^\"]*\\)\".*/\\1/p') $(printf '%s\\n' \"$*\" | sed -n 's/.*\"since\":\\([0-9]*\\).*/\\1/p')\"\n"
+        + "    if grep -qxF \"answered $key\" \"$log\"; then\n"
+        + "        echo \"left $key\" >> \"$log\"\n"
+        + "    else\n"
+        + "        grep -q '^shown ' \"$log\" || {\n"
+        + "            fifo=$(printf '%s\\n' \"$*\" | sed 's/.*\"fifo\":\"\\([^\"]*\\)\".*/\\1/')\n"
+        + "            (sleep 1; printf 'wait\\n' > \"$fifo\"; echo \"answered $key\" >> \"$log\") >/dev/null 2>&1 &\n"
+        + "        }\n"
+        + "        echo \"shown $key\" >> \"$log\"\n"
         + "    fi\n"
         + "    echo shown ;;\n"
         + "esac\n"
@@ -1786,6 +1819,13 @@ QtObject {
     // the prompts the stand-in shell was asked for, oldest first
     function asked() {
         return probe.fixtureText("standin/qs.log").split("\n").filter(l => l.indexOf(" notAnswering {") >= 0).map(l => JSON.parse(l.slice(l.indexOf("{"))));
+    }
+    // the prompts it showed and answered, each once, as "<id> <since>"
+    function shownPrompts() { return check.standInSaid("shown") }
+    function answeredPrompts() { return check.standInSaid("answered") }
+    function standInSaid(word) {
+        const keys = probe.fixtureText("standin/qs.log").split("\n").filter(l => l.startsWith(word + " ")).map(l => l.slice(word.length + 1));
+        return keys.filter((k, i) => keys.indexOf(k) === i);
     }
     property int pageCount: 0
     property bool stale: false
@@ -2051,7 +2091,8 @@ QtObject {
     // The private window (PLAN.md 3.14): Ctrl+Shift+N opens a main window on an off-the-record profile of its own, marked
     // only by its "Private" line. Its pages load from a host named afresh each run (`hush`), which no source file holds,
     // so the last checks can look for it in every file of the throwaway data dir: the stored session, history, site
-    // choices, run record and the main profile's own files.
+    // choices, run record and the main profile's own files; and in every file written while the window was open, its
+    // favicon (a square of hushIconColour) too, under whatever name.
     readonly property var privateSteps: [
         { group: "private" },
         check.server,
@@ -2061,6 +2102,7 @@ QtObject {
               check.hush = "hush" + run + ".test";
               check.both = "both" + run + ".test";
               check.quits = app.quits;
+              check.privateFrom = Date.now();
               probe.back(app);
               app.go(check.local("/plain"), "new", "", "plain");
               app.siteModel.setZoom(check.bothOrigin(), 1.25);
@@ -2090,6 +2132,15 @@ QtObject {
               check.hushPage = s.currentPage;
               return w.currentView !== null && String(w.currentView.url) === check.hushed("/hush") && w.currentView.title === "hush one"
                   && s.currentThread.pages.length === 1 && w.title === "Private · hush one" } },
+        { name: "its favicon is held in memory alone: its copy is a data: address, and no file is kept for it", wait: 1500,
+          expect: () => { check.hushIcon = String(check.priv().currentView.icon); const kept = Engine.keptIcon(check.hushIcon);
+              probe.report("     icon " + check.hushIcon + ", kept " + kept.slice(0, 40));
+              return check.hushIcon === "image://favicon/" + check.hushed("/hush-icon.svg") && kept.startsWith("data:image/png;base64,") } },
+        { name: "and that copy draws", wait: 1000,
+          act: () => { check.iconProbe = Qt.createQmlObject("import QtQuick; Image { cache: false; width: 16; height: 16 }", app.contentItem);
+              check.iconProbe.source = Engine.keptIcon(check.hushIcon) },
+          expect: () => { probe.report("     status " + check.iconProbe.status); return check.iconProbe.status === Image.Ready } },
+        { name: "(the probe gone)", act: () => { check.iconProbe.destroy(); check.iconProbe = null }, expect: () => true },
         { name: "the visit is in the private window's history alone; the main window's session and history know nothing of it",
           expect: () => { probe.report("     private history " + !!check.priv().historyModel.entries[check.hushed("/hush")] + " (" + Object.keys(check.priv().historyModel.entries).join(" ")
                                        + "), main history " + check.mentions(history.entries) + ", session " + check.mentions(session.pages) + "/" + check.mentions(session.threads));
@@ -2215,6 +2266,10 @@ QtObject {
                            + "; holding the shared host: " + control.holding.join(", "));
               return r.files > 0 && r.holding.length === 0 && control.holding.length > 0
                   && ["threads", "history", "sites", "run"].every(n => JSON.stringify(Store.load(n) ?? null).indexOf(check.hush) < 0) } },
+        { name: "nor anything written while it was open: of the files of the data and cache dirs written since it opened (Downloads aside, where its file stays), none holds its host or is a copy of its favicon",
+          expect: () => { const r = probe.filesWritten(check.privateFrom, check.hush, check.hushIconColour);
+              probe.report("     " + r.written.length + " files written since it opened; holding its host or its favicon: " + (r.holding.join(", ") || "none"));
+              return r.written.length > 0 && r.holding.length === 0 } },
         { name: "(the run marked running again)", act: () => app.writeRun({}), expect: () => Store.load("run").clean === false },
         { name: "(a private window again, from the main window)", wait: 1500, act: () => { probe.back(app); probe.press(Qt.Key_N, ctrl | Qt.ShiftModifier) },
           expect: () => app.privateWindows.length === 1 && check.priv().active },
@@ -2240,6 +2295,9 @@ QtObject {
           expect: () => app.visible && app.active && view !== null && Store.load("run").clean === false },
     ]
     property string hush: ""            // the private pages' host, named afresh each run
+    property real privateFrom: 0        // when the private window was about to open (ms)
+    property string hushIcon: ""        // its first page's favicon address
+    readonly property color hushIconColour: "#2a9d5c"     // that favicon, a square no other page shows
     property string both: ""            // a host both profiles load
     property string hushPage: ""
     property string hushTwo: ""
@@ -5747,6 +5805,18 @@ QtObject {
           wait: 1000, expect: () => !view.audioMuted && check.rowOf("p:" + session.currentPage).word === "playing" && check.hears(true) },
         { name: "paused: the mark goes within the 2 s check", wait: 3000, act: () => view.runJavaScript("a.pause()"),
           expect: () => !view.recentlyAudible && !session.current.audible && check.rowOf("p:" + session.currentPage).word !== "playing" },
+        // a music player's audio element is often in no document (new Audio()), which the element query cannot find: the
+        // page's Media Session says it plays
+        { name: "(a page whose player is in no document and says so through the Media Session)", wait: 1500,
+          act: () => app.go(check.local("/media-detached"), "navigate"), expect: () => view.title === "media detached" && !view.recentlyAudible },
+        { name: "a click plays it: within the 2 s check the page is playing and its row says so, and the speaker hears it", wait: 3500,
+          act: () => check.click(),
+          expect: () => { const r = check.rowOf("p:" + session.currentPage);
+              probe.report("     recentlyAudible " + view.recentlyAudible + ", audible " + session.current.audible + ", word " + (r ? r.word : "no row"));
+              return view.recentlyAudible && session.current.audible && !!r && r.word === "playing" && check.hears(true) },
+          page: "String(!a.paused && !document.contains(a) && navigator.mediaSession.playbackState)", pageExpect: v => v === "playing" },
+        { name: "paused: the mark goes within the 2 s check", wait: 3000, act: () => view.runJavaScript("a.pause()"),
+          expect: () => !view.recentlyAudible && !session.current.audible && check.rowOf("p:" + session.currentPage).word !== "playing" },
     ]
     // The sound group: whether Thyris's sound reaches the check's speaker now. Heard: a playback stream opened by Thyris
     // (its audio service is a process under it), neither muted nor corked, and the speaker's loudest sample over 0.05
@@ -5974,6 +6044,8 @@ QtObject {
             "/asks": check.asksPage, "/auth": { body: "<title>signed in</title>", auth: "admin:secret" },
             "/leave": "<title>leave</title><input id=f><script>onbeforeunload = e => { e.preventDefault(); e.returnValue = '' }</script>",
             "/dialogs": check.fixturePage("dialogs", ""), "/upload": check.uploadPage, "/full": check.fullPage, "/tone": check.tonePage, "/media": check.mediaPage,
+            "/media-detached": check.mediaPage.replace("<title>media</title>", "<title>media detached</title>").replace("document.body.appendChild(a);",
+                "a.onplay = () => navigator.mediaSession.playbackState = 'playing'; a.onpause = () => navigator.mediaSession.playbackState = 'paused';"),
             "/drop":"<!doctype html><title>drop</title><div id=zone style='position:fixed;left:0;top:0;width:400px;height:300px'>zone</div>"
                 + "<script>window.log = []; zone.ondragover = e => e.preventDefault();"
                 + "zone.ondrop = e => { e.preventDefault(); log.push('zone ' + [...e.dataTransfer.files].map(f => f.name).join('+')) }</script>",
@@ -6034,7 +6106,12 @@ QtObject {
         // it found and sets one named after its fragment
         // the first script of a page: whether a scriptlet ran before it (check-mark, on bücher.test)
         pages["/mark"] = "<title>mark</title><script>window.seen = document.documentElement.dataset.scriptlet || 'none'</script><p>mark";
-        pages["/hush"] = "<title>hush one</title><a href=/hush-two style='position:fixed;left:0;top:0;width:300px;height:120px;display:block'>next</a>";
+        // a page whose load never ends: its image is on /slow, which never answers
+        pages["/heavy"] = "<title>heavy</title><img src=/slow><p>a page still loading";
+        pages["/hush"] = "<title>hush one</title><link rel=icon href=/hush-icon.svg>"
+            + "<a href=/hush-two style='position:fixed;left:0;top:0;width:300px;height:120px;display:block'>next</a>";
+        pages["/hush-icon.svg"] = { type: "image/svg+xml",
+                                    body: "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect width='16' height='16' fill='" + check.hushIconColour + "'/></svg>" };
         pages["/hush-two"] = "<title>hush two</title><p>the second page";
         pages["/cookie"] = "<title>cookie</title><script>window.before = document.cookie; document.cookie = location.hash.slice(1) + '=1; path=/'</script>";
         pages["/tall"] = "<title>tall</title>" + "<p>a line of a tall page, to scroll</p>".repeat(600)

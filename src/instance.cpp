@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QDeadlineTimer>
 #include <QDir>
 #include <QFileInfo>
@@ -75,12 +76,15 @@ static bool endHolder(qint64 pid) {
 // The notch's "Thyris isn't answering" with Wait and Close it: the shell's prompt for an app that stopped answering
 // (IslandController.notAnswering), asked as its scripts/activity/hyprland-dialog asks it. The answer comes back on a
 // fifo as the button's word, "close" or "wait"; the prompt is this process's (its pid), so it goes when this one does, and
-// it names the browser's process, whose Details Activity shows.
+// it names the browser's process, whose Details Activity shows. Each ask is a prompt of its own by its `since`: the shell
+// leaves one it has answered as it is when it is offered again, and this one asks again under the same pid after Wait.
 namespace {
 class Prompt {
 public:
     ~Prompt() { drop(); }
     bool shown() const { return m_shown; }
+    // the browser it last asked about
+    qint64 about() const { return m_about; }
     // "shown"; "no" when the shell shows no prompt now (its notch off, or held back); "" with no shell to ask
     QString ask(qint64 pid) {
         if (m_fd < 0) {
@@ -97,13 +101,29 @@ public:
         }
         const QJsonObject request{{QStringLiteral("id"), id()}, {QStringLiteral("cls"), QStringLiteral("thyris")},
                                   {QStringLiteral("title"), QString()}, {QStringLiteral("pid"), pid}, {QStringLiteral("fifo"), m_fifo},
-                                  {QStringLiteral("buttons"), QJsonArray{QStringLiteral("close"), QStringLiteral("wait")}}};
+                                  {QStringLiteral("buttons"), QJsonArray{QStringLiteral("close"), QStringLiteral("wait")}},
+                                  {QStringLiteral("since"), QDateTime::currentMSecsSinceEpoch()}};
+        m_about = pid;
+        m_request = QStringList{QStringLiteral("island"), QStringLiteral("notAnswering"),
+                                QString::fromUtf8(QJsonDocument(request).toJson(QJsonDocument::Compact))};
         QProcess qs;
-        qs.start(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("island"), QStringLiteral("notAnswering"),
-                                                                QString::fromUtf8(QJsonDocument(request).toJson(QJsonDocument::Compact))});
+        qs.start(QStringLiteral("qs"), shellIpc() + m_request);
         const bool ran = qs.waitForFinished(5000) && qs.exitStatus() == QProcess::NormalExit && qs.exitCode() == 0;
         m_shown = ran && qs.readAllStandardOutput().trimmed() == "shown";
+        m_offered.setRemainingTime(5000);
         return m_shown ? QStringLiteral("shown") : ran ? QStringLiteral("no") : QString();
+    }
+    // Shown, it is offered again every 5 s until it is answered, as hyprland-dialog offers its own: the shell holds it only
+    // in memory, and a reload or restart lost it. What the shell says to that changes nothing.
+    void offerAgain() {
+        if (!m_shown || !m_offered.hasExpired())
+            return;
+        QProcess qs;
+        qs.setProgram(QStringLiteral("qs"));
+        qs.setArguments(shellIpc() + m_request);
+        qs.setStandardOutputFile(QProcess::nullDevice());   // its "shown" is not this start's to print
+        qs.startDetached();
+        m_offered.setRemainingTime(5000);
     }
     // the button's word once the prompt is answered (the shell has let it go then), else ""
     QString answer() {
@@ -136,6 +156,9 @@ private:
     int m_fd = -1;
     QByteArray m_got;
     bool m_shown = false;
+    QStringList m_request;      // the shell call that asked
+    QDeadlineTimer m_offered;   // when it is offered again
+    qint64 m_about = 0;
 };
 }
 
@@ -151,17 +174,22 @@ int Instance::start(const QUrl &url, const QString &from, const QString &context
     // Chromium has shut down, and then this one is the browser. The link waits in one connection until it is answered.
     QLocalSocket socket;
     Prompt prompt;
-    // the browser that is ended (Close it, or Chromium's way with no shell to ask) leaves this one the profile
+    // the browser that is ended (Close it, or Chromium's way with no shell to ask) leaves this one the profile, unless
+    // another start that waited on it took the profile first: -1, and the link goes to that one (its socket stays)
     const auto takeOver = [this](qint64 pid) {
         if (!endHolder(pid))
             return int(NoAnswer);
         if (!m_lock->tryLock(0)) {
             m_lock->removeStaleLockFile();
-            m_lock->tryLock(0);
+            if (!m_lock->tryLock(0) && m_lock->error() == QLockFile::LockFailedError)
+                return -1;
         }
         QLocalServer::removeServer(m_path);
         return int(m_server.listen(m_path) ? Listening : Failed);
     };
+    // the browser this start waits on: one that holds the profile in its place (another start's Close it ended it) gets
+    // 20 s of its own, and a prompt about the one before goes
+    qint64 waitedOn = 0;
     for (QDeadlineTimer deadline(20000);;) {
         // No browser on this profile (a lock that cannot be written at all counts so too): this one is it. The socket
         // file of one that did not quit cleanly goes first.
@@ -169,17 +197,28 @@ int Instance::start(const QUrl &url, const QString &from, const QString &context
             QLocalServer::removeServer(m_path);
             return m_server.listen(m_path) ? Listening : Failed;
         }
+        if (const qint64 holder = holderOf(*m_lock); holder != 0 && holder != waitedOn) {
+            if (waitedOn != 0) {
+                prompt.drop();
+                deadline.setRemainingTime(20000);
+            }
+            waitedOn = holder;
+        }
         const HandOver result = handOver(socket, line);
         if (result == Taken)
             return HandedOff;
         if (prompt.shown()) {
             const QString answer = prompt.answer();
-            // Close it: a holder gone meanwhile leaves the lock to take above
-            if (const qint64 pid = answer == u"close" ? holderOf(*m_lock) : 0)
-                return takeOver(pid);
+            // Close it: the browser asked about, while it still holds the profile (a holder gone meanwhile leaves the lock
+            // to take above, and one that took it since is not ended)
+            const qint64 pid = answer == u"close" && holderOf(*m_lock) == prompt.about() ? prompt.about() : 0;
+            if (const int took = pid != 0 ? takeOver(pid) : -1; took >= 0)
+                return took;
             // Wait (Esc too): asked again if it still has not answered in 20 s
             if (answer == u"wait")
                 deadline.setRemainingTime(20000);
+            else
+                prompt.offerAgain();
         } else if (deadline.hasExpired()) {
             // The browser holds the profile and has not taken the link in 20 s, as long as Chromium waits (its
             // kTimeoutInSeconds, process_singleton_posix.cc): the notch asks whether to wait or close it (the owner,
@@ -189,8 +228,8 @@ int Instance::start(const QUrl &url, const QString &from, const QString &context
             if (pid == 0)
                 return result == Held ? Queued : NoAnswer;
             const QString said = prompt.ask(pid);
-            if (said.isEmpty())
-                return takeOver(pid);
+            if (const int took = said.isEmpty() ? takeOver(pid) : -1; took >= 0)
+                return took;
             if (said != u"shown")
                 deadline.setRemainingTime(20000);
         }

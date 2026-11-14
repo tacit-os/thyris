@@ -2251,6 +2251,13 @@ public:
         if (!frame->IsMain())
             return;
         m_refocus = true;
+        // the page's first document of its own has committed: a load asked from now on adds an entry after it, where it
+        // took that one's place until it had loaded, and an address typed meanwhile left nothing to go back to. Not
+        // Chromium's error page for a failed load, whose entry stays the one a load takes (m_onErrorEntry, at its end)
+        if (!m_errorPage && frame->GetURL() != "about:blank") {
+            QMutexLocker lock(&m_lock);
+            m_onCreationEntry = false;
+        }
         forgetAnswers(browser);
     }
     void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int status) override {

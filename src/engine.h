@@ -60,11 +60,14 @@ public:
     // Favicons. Qt's favicon provider answers an image://favicon/ address from the view whose icon it is, and with
     // that view unloaded (Discarded) it crashed the browser in WebContentsAdapter::icon() (2026-10-01: after being
     // left a while). So nothing draws that address: keepIcon saves a live view's favicon once into the cache
-    // (iconKept follows, with the file), and every favicon drawn is keptIcon's: the saved copy of an image://favicon/
+    // (iconKept follows, with the copy), and every favicon drawn is keptIcon's: the saved copy of an image://favicon/
     // address ("" until there is one), any other address as it is.
     // A copy missing is asked for there and then, unless an unloaded view holds the address (iconUnloaded): the
     // provider answers an address no view has from the profile's favicon database.
-    Q_INVOKABLE void keepIcon(const QString &address);
+    // A private window's (`offTheRecord`) is never saved: an address one has shown is held in memory for the run, its
+    // copy a data: address, and is asked for only by that window's live view, never in the main profile, so the window
+    // leaves nothing on disk.
+    Q_INVOKABLE void keepIcon(const QString &address, bool offTheRecord = false);
     Q_INVOKABLE QString keptIcon(const QString &address);
     // A view holding `address` was unloaded (true) or loaded again or gone (false); counted, as views share icons
     Q_INVOKABLE void iconUnloaded(const QString &address, bool unloaded);
@@ -89,5 +92,7 @@ private:
     QSet<QString> m_keeping;            // favicons asked of the provider, not answered yet
     QSet<QString> m_unanswered;         // asked and answered with no image: not asked again this run
     QHash<QString, int> m_unloaded;     // addresses held by unloaded views, and by how many
+    QSet<QString> m_private;            // addresses a private window has shown: kept in memory alone
+    QHash<QString, QString> m_held;     // their copies, as data: addresses
     int m_iconRevision = 0;
 };

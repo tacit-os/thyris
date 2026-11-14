@@ -36,7 +36,8 @@ public:
     // `from` and `context` to the one running: HandedOff once it took them. One that has not taken the link in 20 s
     // (hung, or quitting with the lock still held) and is this executable is asked about in the notch, "Thyris isn't
     // answering" with Wait and Close it: Wait asks again 20 s later, Close it ends it (SIGTERM, SIGKILL after 3 s) and
-    // this one takes the lock (Listening); with no shell to ask, it is ended so. Queued / NoAnswer when that process is
+    // this one takes the lock (Listening); with no shell to ask, it is ended so. A browser that holds the profile in its
+    // place meanwhile (another start's Close it) gets 20 s of its own. Queued / NoAnswer when that process is
     // not ours to end. One that is quitting takes no link (close()), so this tries again, and takes the lock itself
     // once that browser has gone.
     Q_INVOKABLE int start(const QUrl &url = QUrl(), const QString &from = QString(), const QString &context = QString());

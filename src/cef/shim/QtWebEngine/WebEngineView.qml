@@ -75,15 +75,17 @@ PageItem {
     }
     // CEF says a page is playing only through CefAudioHandler, which takes the sound off the speakers (its loopback
     // stream mutes the source), so a live page is asked every 2 s instead (the owner, 2026-11-13): a video or audio
-    // element of its document playing with its sound on, Lifecycle.playing's test (not one inside another site's frame,
-    // nor Web Audio). The browser's mute (audioMuted) is not the page's own, so a page muted so still reads as playing.
+    // element of its document playing with its sound on, or the page's Media Session saying it plays (a player in no
+    // document or in a shadow root), Lifecycle.playing's test (not one inside another site's frame, nor Web Audio). The
+    // browser's mute (audioMuted) is not the page's own, so a page muted so still reads as playing.
     property bool recentlyAudible: false
     Timer {
         interval: 2000
         repeat: true
         running: lifecycleState === 0 && !unresponsive && String(url) !== ""
         onRunningChanged: if (!running) recentlyAudible = false
-        onTriggered: runJavaScript("[...document.querySelectorAll('video, audio')].some(m => !m.paused && !m.ended && !m.muted && m.volume > 0)",
+        onTriggered: runJavaScript("[...document.querySelectorAll('video, audio')].some(m => !m.paused && !m.ended && !m.muted && m.volume > 0)"
+                                   + " || navigator.mediaSession?.playbackState === 'playing'",
                                    WebEngineScript.ApplicationWorld, playing => recentlyAudible = playing === true)
     }
     signal selectClientCertificate(var selection)

@@ -3,11 +3,9 @@
 -- (safe_require("custom.browser")). The Qt WebEngine build's main window (class browser, opacity 0.85 0.77) has its rule
 -- in the session's rules.lua.
 
--- The CEF build's main window is class browser-cef (src/main.cpp), which that rule misses: Hyprland matches a class
--- whole. The same glass here, scaled as the session scales it for a bright wallpaper (tacit_glass, hyprland.lua). The
--- private window (PLAN.md 3.14) is a main window of the same class: nothing about its colour or glass differs.
-local glass = tacit_glass or function(o) return o end
-hl.window_rule({ match = { class = "^(browser-cef)$" }, opacity = string.format("%.3f %.3f", glass(0.85), glass(0.77)) })
+-- The CEF build's main window is class browser-cef (src/main.cpp), which that rule misses (Hyprland matches a class
+-- whole), and it has no opacity rule here either: Thyris stays opaque, not frosted (the owner's decision n7), and its
+-- Theme.windowOpacity is 1 to match. The private window (PLAN.md 3.14) is a main window of the same class.
 
 -- A sign-in popup in the notch (~/book4-edge/signin-notch-plan.md): its page alone, under the app_id browser-signin,
 -- shown once the notch's sheet has settled, into the hole the shell leaves for it. It floats pinned (the notch is on

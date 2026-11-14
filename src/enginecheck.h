@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QColor>
 #include <QLocalSocket>
 #include <QMimeData>
 #include <QObject>
@@ -76,6 +77,10 @@ public:
     // window's checks: { files, bytes: how many were read, holding: the paths whose bytes hold it, as UTF-8 or UTF-16 }.
     // Symbolic links (the user's fonts) are not followed.
     Q_INVOKABLE QVariantMap filesHolding(const QString &text) const;
+    // Every file of the throwaway data and cache dirs written at or after `since` (ms since the epoch), Downloads aside,
+    // for the private window's last check: { written: their paths, holding: those whose bytes hold `text` (UTF-8 or
+    // UTF-16) or that are a picture whose middle is `icon`, a copy of a favicon of that colour whatever its name }.
+    Q_INVOKABLE QVariantMap filesWritten(qint64 since, const QString &text, const QColor &icon) const;
     // The same pages over TLS, with a self-signed certificate for cert.test made in the throwaway data dir
     // (openssl); returns its port, 0 if it could not start. The TLS handshake succeeds only once the page
     // continues past the certificate.

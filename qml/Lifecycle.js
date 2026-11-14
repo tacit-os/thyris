@@ -25,9 +25,11 @@ function keeps(p, always, edited) {
 // CEF says nothing of a page's sound unless it captures it, which mutes the page (a0598cc), so on CEF `audible` comes
 // from asking each live page every 2 s with this test (the shim's WebEngineView.qml has its own copy). Before a page
 // unloads the net asks it too (Main.unloadPage) with `playing`: a video or audio element of its document playing with
-// its sound on (not one inside another site's frame, nor Web Audio). A page found so at `at` counts as audible for
-// `heardFor`, then is asked again.
-var playing = "[...document.querySelectorAll('video, audio')].some(m => !m.paused && !m.ended && !m.muted && m.volume > 0)";
+// its sound on (not one inside another site's frame, nor Web Audio), or a page whose Media Session says it is playing,
+// as music players say, whose player is often in no document (new Audio()) or in a shadow root, which the query misses.
+// A page found so at `at` counts as audible for `heardFor`, then is asked again.
+var playing = "[...document.querySelectorAll('video, audio')].some(m => !m.paused && !m.ended && !m.muted && m.volume > 0)"
+    + " || navigator.mediaSession?.playbackState === 'playing'";
 var heardFor = 60000;
 function heard(at, now) {
     return at > 0 && now - at < heardFor;
