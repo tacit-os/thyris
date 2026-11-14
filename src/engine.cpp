@@ -140,6 +140,11 @@ Engine::Engine(QObject *parent) : QObject(parent), m_handler(new OwnPages(this))
 
 static const QString faviconScheme = QStringLiteral("image://favicon/");
 
+// a page's favicon given whole in its address (a canvas's toDataURL(), as a page that draws its icon each frame gives it)
+static bool isData(const QString &address) {
+    return QStringView(address).mid(faviconScheme.size()).startsWith(u"data:", Qt::CaseInsensitive);
+}
+
 // one file per icon address, in the cache (the check's own under --check-engine)
 QString Engine::iconFile(const QString &address) const {
     const QByteArray key = QCryptographicHash::hash(address.mid(faviconScheme.size()).toUtf8(), QCryptographicHash::Sha1).toHex();
@@ -150,12 +155,18 @@ QString Engine::iconFile(const QString &address) const {
 QString Engine::keptIcon(const QString &address) {
     if (!address.startsWith(faviconScheme))
         return address;
+    // drawn as it is: nothing to fetch, save or hold
+    if (isData(address))
+        return address.mid(faviconScheme.size());
     const QString file = iconFile(address);
     if (QFileInfo::exists(file))
         return QUrl::fromLocalFile(file).toString();
-    // a private window's: held, or not to be had (asked for here, it would be fetched in the main profile and saved)
-    if (m_private.contains(address))
-        return m_held.value(address);
+    // a private window's: held, or not to be had (asked for here, it would be fetched in the main profile and saved);
+    // drawn now, its copy is the last to go
+    if (m_private.contains(address)) {
+        const QString *held = m_held.object(address);
+        return held ? *held : QString();
+    }
     // asked once the binding that wants it is done; iconRevision brings it back
     QMetaObject::invokeMethod(this, [this, address] { keepIcon(address); }, Qt::QueuedConnection);
     return QString();
@@ -172,7 +183,9 @@ void Engine::iconUnloaded(const QString &address, bool unloaded) {
 }
 
 void Engine::keepIcon(const QString &address, bool offTheRecord) {
-    if (!address.startsWith(faviconScheme))
+    // a data: favicon is drawn from its own address (keptIcon); CEF's provider answered one before the connection below
+    // was made, so it never came, and each kept its address and its answer for the run
+    if (!address.startsWith(faviconScheme) || isData(address))
         return;
     if (offTheRecord)
         m_private.insert(address);
@@ -193,28 +206,44 @@ void Engine::keepIcon(const QString &address, bool offTheRecord) {
         return;
     m_keeping.insert(address);
     QQuickImageResponse *response = provider->requestImageResponse(address.mid(faviconScheme.size()), QSize(32, 32));
-    connect(response, &QQuickImageResponse::finished, this, [this, response, address, file] {
+    connect(response, &QQuickImageResponse::finished, this, [this, response, address, file, offTheRecord] {
         m_keeping.remove(address);
         QQuickTextureFactory *factory = response->textureFactory();
         const QImage image = factory ? factory->image() : QImage();
         delete factory;
         response->deleteLater();
-        // a private window's in memory, as it was asked or since
+        // a private window's in memory, as it was asked or since; asked for one, and every one closed since: nothing
         const bool held = m_private.contains(address);
+        if (offTheRecord && !held)
+            return;
         if (image.isNull() || (!held && (!QDir().mkpath(QFileInfo(file).path()) || !image.save(file, "PNG")))) {
             m_unanswered.insert(address);
             return;
         }
+        QString kept;
         if (held) {
             QByteArray png;
             QBuffer buffer(&png);
             buffer.open(QIODevice::WriteOnly);
             image.save(&buffer, "PNG");
-            m_held.insert(address, QStringLiteral("data:image/png;base64,") + QString::fromLatin1(png.toBase64()));
+            kept = QStringLiteral("data:image/png;base64,") + QString::fromLatin1(png.toBase64());
+            m_held.insert(address, new QString(kept), (address.size() + kept.size()) * qsizetype(sizeof(QChar)));
+        } else {
+            kept = QUrl::fromLocalFile(file).toString();
         }
         ++m_iconRevision;
-        emit iconKept(address, m_held.value(address, QUrl::fromLocalFile(file).toString()));
+        emit iconKept(address, kept);
     });
+}
+
+// The last private window has gone, and its views with it: nothing it showed is held, nor known any longer
+void Engine::forgetPrivate() {
+    if (!m_privateProfiles.isEmpty())
+        return;
+    for (const QString &address : std::as_const(m_private))
+        m_unanswered.remove(address);
+    m_private.clear();
+    m_held.clear();
 }
 
 void Engine::quietChannel() {
@@ -239,6 +268,14 @@ void Engine::prepare() {
 }
 
 void Engine::attach(QObject *profile) {
+    if (profile && profile->property("offTheRecord").toBool() && !m_privateProfiles.contains(profile)) {
+        m_privateProfiles.insert(profile);
+        // a private window's profile goes with it; what they showed goes once the window's other parts have too
+        connect(profile, &QObject::destroyed, this, [this, profile] {
+            m_privateProfiles.remove(profile);
+            QMetaObject::invokeMethod(this, &Engine::forgetPrivate, Qt::QueuedConnection);
+        });
+    }
 #ifdef BROWSER_CEF
     // browser:// pages: the engine's for the main profile, and a private window's own request context's, which has none
     // of the engine's (Settings and Pages and memory opened there as "Can't reach settings", 2026-11-13)

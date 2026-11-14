@@ -103,3 +103,12 @@ target_include_directories(store_test PRIVATE src)
 target_compile_definitions(store_test PRIVATE SRCDIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/native")
 target_link_libraries(store_test PRIVATE Qt6::Core Qt6::Qml Qt6::Network Qt6::Test OpenSSL::Crypto ZLIB::ZLIB)
 add_test(NAME store_test COMMAND store_test)
+# Engine's favicon copies (src/engine.*) with a stand-in favicon provider, on the Qt WebEngine build: ctest, or
+# `cmake --build <dir> --target engine_test` and run <dir>/engine_test
+if(NOT BROWSER_CEF)
+    qt_add_executable(engine_test EXCLUDE_FROM_ALL tests/native/engine_test.cpp src/engine.cpp src/webstore.cpp src/extensions.cpp src/crx.cpp src/storerules.cpp src/storefetch.cpp)
+    target_include_directories(engine_test PRIVATE src)
+    target_compile_definitions(engine_test PRIVATE OPSIS_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(engine_test PRIVATE Qt6::GuiPrivate Qt6::Quick Qt6::Qml Qt6::Network Qt6::Test Qt6::WebEngineQuick Qt6::WebEngineQuickPrivate Qt6::WebEngineCore OpenSSL::Crypto ZLIB::ZLIB)
+    add_test(NAME engine_test COMMAND engine_test)
+endif()

@@ -114,13 +114,14 @@ public:
         return m_shown ? QStringLiteral("shown") : ran ? QStringLiteral("no") : QString();
     }
     // Shown, it is offered again every 5 s until it is answered, as hyprland-dialog offers its own: the shell holds it only
-    // in memory, and a reload or restart lost it. What the shell says to that changes nothing.
+    // in memory, and a reload or restart lost it. What the shell says to that changes nothing. Each offer has 2 s, as
+    // hyprland-dialog's: Quickshell's ipc call waits for its answer without end, and a shell that hangs kept one every 5 s.
     void offerAgain() {
         if (!m_shown || !m_offered.hasExpired())
             return;
         QProcess qs;
-        qs.setProgram(QStringLiteral("qs"));
-        qs.setArguments(shellIpc() + m_request);
+        qs.setProgram(QStringLiteral("timeout"));
+        qs.setArguments(QStringList{QStringLiteral("2"), QStringLiteral("qs")} + shellIpc() + m_request);
         qs.setStandardOutputFile(QProcess::nullDevice());   // its "shown" is not this start's to print
         qs.startDetached();
         m_offered.setRemainingTime(5000);

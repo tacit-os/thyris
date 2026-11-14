@@ -2141,6 +2141,32 @@ QtObject {
               check.iconProbe.source = Engine.keptIcon(check.hushIcon) },
           expect: () => { probe.report("     status " + check.iconProbe.status); return check.iconProbe.status === Image.Ready } },
         { name: "(the probe gone)", act: () => { check.iconProbe.destroy(); check.iconProbe = null }, expect: () => true },
+        // a page that draws its favicon anew each frame (a timer, a count, an upload's progress on a canvas): CEF reports
+        // each frame's as a data: address of its own, and memory must not keep one per frame
+        { name: "(a page there whose favicon changes every frame, for 3 s, each address it shows noted)", wait: 3000,
+          act: () => { const w = check.priv(); check.frameIcons = {};
+              w.go(check.hushed("/frames"), "new", "", "frames");
+              check.framesPage = w.windowSession.currentPage; check.frameView = w.views[check.framesPage];
+              check.frameView.iconChanged.connect(check.frameSeen) },
+          expect: () => { const n = Object.keys(check.frameIcons).length; probe.report("     " + n + " favicons in 3 s");
+              return check.frameView === check.priv().currentView && check.frameView.title === "frames" && n >= 30 } },
+        { name: "each frame's favicon draws from its own data: address: no copy of any is held, however many frames went by",
+          expect: () => { const all = Object.keys(check.frameIcons), kept = all.map(a => Engine.keptIcon(a));
+              const own = all.filter((a, i) => kept[i] === a.slice("image://favicon/".length)).length;
+              // a copy's size and its address's, as UTF-16
+              const held = all.map((a, i) => kept[i] !== "" && kept[i] !== a.slice("image://favicon/".length) ? (a.length + kept[i].length) * 2 : -1)
+                  .filter(b => b >= 0);
+              probe.report("     " + all.length + " frames, " + own + " drawn from their own address; copies held of them: " + held.length
+                           + " (" + Math.round(held.reduce((n, b) => n + b, 0) / 1024) + " kB)");
+              return all.length >= 30 && all.every(a => a.startsWith("image://favicon/data:image/png;base64,")) && own === all.length } },
+        { name: "and the frame on show draws", wait: 1000,
+          act: () => { check.iconProbe = Qt.createQmlObject("import QtQuick; Image { cache: false; width: 16; height: 16 }", app.contentItem);
+              check.iconProbe.source = Engine.keptIcon(String(check.frameView.icon)) },
+          expect: () => { probe.report("     status " + check.iconProbe.status); return check.iconProbe.status === Image.Ready } },
+        { name: "(the probe and that page gone)", wait: 1500,
+          act: () => { check.iconProbe.destroy(); check.iconProbe = null; check.frameView.iconChanged.disconnect(check.frameSeen);
+              check.frameView = null; check.priv().show(check.hushPage); check.priv().closePage(check.framesPage) },
+          expect: () => !check.priv().windowSession.pages[check.framesPage] && check.priv().currentView.title === "hush one" },
         { name: "the visit is in the private window's history alone; the main window's session and history know nothing of it",
           expect: () => { probe.report("     private history " + !!check.priv().historyModel.entries[check.hushed("/hush")] + " (" + Object.keys(check.priv().historyModel.entries).join(" ")
                                        + "), main history " + check.mentions(history.entries) + ", session " + check.mentions(session.pages) + "/" + check.mentions(session.threads));
@@ -2297,6 +2323,10 @@ QtObject {
     property string hush: ""            // the private pages' host, named afresh each run
     property real privateFrom: 0        // when the private window was about to open (ms)
     property string hushIcon: ""        // its first page's favicon address
+    property var frameIcons: ({})       // the favicon addresses /frames showed, as keys
+    property string framesPage: ""
+    property var frameView: null
+    function frameSeen() { if (check.frameView) check.frameIcons[String(check.frameView.icon)] = true }
     readonly property color hushIconColour: "#2a9d5c"     // that favicon, a square no other page shows
     property string both: ""            // a host both profiles load
     property string hushPage: ""
@@ -5371,6 +5401,27 @@ QtObject {
           expect: () => { const found = []; const walk = item => { for (const c of item.children) { if (String(c.source ?? "").startsWith("image://favicon/")) found.push(String(c.source)); walk(c) } };
               walk(app.contentItem); probe.report("     " + found.join(" ")); return found.length === 0 } },
         { name: "(the probe gone)", act: () => { check.iconProbe.destroy(); check.iconProbe = null }, expect: () => true },
+        // a page whose favicon changes every frame (the private group's /frames) in a main window: CEF's provider answered a
+        // data: favicon before Engine listened, so none drew and each frame's stayed asked for the run
+        { name: "(a page whose favicon changes every frame, for 2 s, each address it shows noted)", wait: 2000,
+          act: () => { check.frameIcons = {}; app.go(check.local("/frames"), "new", "", "frames");
+              check.framesPage = session.currentPage; check.frameView = app.views[check.framesPage];
+              check.frameView.iconChanged.connect(check.frameSeen) },
+          expect: () => { const n = Object.keys(check.frameIcons).length; probe.report("     " + n + " favicons in 2 s");
+              return check.frameView === view && view.title === "frames" && n >= 20 } },
+        { name: "each frame's favicon draws from its own data: address there too",
+          expect: () => { const all = Object.keys(check.frameIcons);
+              const own = all.filter(a => Engine.keptIcon(a) === a.slice("image://favicon/".length)).length;
+              probe.report("     " + all.length + " frames, " + own + " drawn from their own address");
+              return all.length >= 20 && own === all.length } },
+        { name: "and the frame on show draws", wait: 1000,
+          act: () => { check.iconProbe = Qt.createQmlObject("import QtQuick; Image { cache: false; width: 16; height: 16 }", app.contentItem);
+              check.iconProbe.source = Engine.keptIcon(String(check.frameView.icon)) },
+          expect: () => { probe.report("     status " + check.iconProbe.status); return check.iconProbe.status === Image.Ready } },
+        { name: "(the probe and that page gone)", wait: 1500,
+          act: () => { check.iconProbe.destroy(); check.iconProbe = null; check.frameView.iconChanged.disconnect(check.frameSeen);
+              check.frameView = null; app.closePage(check.framesPage) },
+          expect: () => !session.pages[check.framesPage] },
     ]
     readonly property var railSteps: [
         { group: "rail" },
@@ -6113,6 +6164,11 @@ QtObject {
         pages["/hush-icon.svg"] = { type: "image/svg+xml",
                                     body: "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><rect width='16' height='16' fill='" + check.hushIconColour + "'/></svg>" };
         pages["/hush-two"] = "<title>hush two</title><p>the second page";
+        // a favicon drawn anew each frame: the private window's colour, the frame's number in the top-left pixel
+        pages["/frames"] = "<title>frames</title><link id=l rel=icon><canvas id=c width=16 height=16></canvas><script>"
+            + "const g = c.getContext('2d'); let n = 0; (function f() { g.fillStyle = '" + check.hushIconColour + "'; g.fillRect(0, 0, 16, 16); "
+            + "g.fillStyle = 'rgb(' + (n & 255) + ',' + (n >> 8 & 255) + ',0)'; g.fillRect(0, 0, 1, 1); n++; l.href = c.toDataURL(); "
+            + "requestAnimationFrame(f) })()</script>";
         pages["/cookie"] = "<title>cookie</title><script>window.before = document.cookie; document.cookie = location.hash.slice(1) + '=1; path=/'</script>";
         pages["/tall"] = "<title>tall</title>" + "<p>a line of a tall page, to scroll</p>".repeat(600)
         pages["/icon"] = "<title>icon</title><link rel=icon href='/fav.svg'><p>a page with its own favicon"

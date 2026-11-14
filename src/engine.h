@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QCache>
 #include <QHash>
 #include <QSet>
 #include <QStringList>
@@ -64,9 +65,11 @@ public:
     // address ("" until there is one), any other address as it is.
     // A copy missing is asked for there and then, unless an unloaded view holds the address (iconUnloaded): the
     // provider answers an address no view has from the profile's favicon database.
-    // A private window's (`offTheRecord`) is never saved: an address one has shown is held in memory for the run, its
-    // copy a data: address, and is asked for only by that window's live view, never in the main profile, so the window
-    // leaves nothing on disk.
+    // A private window's (`offTheRecord`) is never saved: an address one has shown is held in memory while one is open,
+    // its copy a data: address, and is asked for only by that window's live view, never in the main profile, so the window
+    // leaves nothing on disk. The copies take at most heldLimit, the one drawn longest ago going first, and all of it
+    // goes with the last private window. A data: favicon, in any window, is drawn from its own address: nothing of it is
+    // asked for, saved or held.
     Q_INVOKABLE void keepIcon(const QString &address, bool offTheRecord = false);
     Q_INVOKABLE QString keptIcon(const QString &address);
     // A view holding `address` was unloaded (true) or loaded again or gone (false); counted, as views share icons
@@ -89,10 +92,13 @@ private:
     void convertNext(QStringList left, QStringList asked);
     QWebEngineUrlSchemeHandler *m_handler = nullptr;
     QString iconFile(const QString &address) const;
+    void forgetPrivate();
     QSet<QString> m_keeping;            // favicons asked of the provider, not answered yet
     QSet<QString> m_unanswered;         // asked and answered with no image: not asked again this run
     QHash<QString, int> m_unloaded;     // addresses held by unloaded views, and by how many
+    static constexpr qsizetype heldLimit = 2 << 20;    // bytes: about 500 favicons at 32 px
+    QSet<QObject *> m_privateProfiles;  // the private windows' (attach)
     QSet<QString> m_private;            // addresses a private window has shown: kept in memory alone
-    QHash<QString, QString> m_held;     // their copies, as data: addresses
+    QCache<QString, QString> m_held{heldLimit};   // their copies, as data: addresses
     int m_iconRevision = 0;
 };
