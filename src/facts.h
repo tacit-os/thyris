@@ -45,6 +45,12 @@ public:
     static QVariantMap certificateFacts(const QByteArray &der);
     // { bytes (resident), cgroup } of a running process; {} once it is gone or unreadable
     Q_INVOKABLE QVariantMap memory(qint64 pid) const;
+    // the log-in session this browser runs in (systemd's XDG_SESSION_ID), "" when there is none: a run record from
+    // another one ended with that session (a shutdown or a log-out), not with the browser stopping (PLAN.md 8i)
+    Q_INVOKABLE QString sessionId() const;
+    // when this machine started (ms since the epoch, /proc/stat's btime), 0 when unreadable or in check mode: a run
+    // record with no session (one written before sessionId was kept) that was last seen before this is no crash either
+    Q_INVOKABLE double bootedAt() const;
     // The machine's memory for the memory net (Lifecycle.low): /proc/meminfo's MemAvailable and MemTotal as
     // { available, total } in bytes; {} when unreadable. Check mode reads MemAvailable from fakeAvailable alone (all of
     // MemTotal until one is set), so the check machine's own memory never unloads a page.

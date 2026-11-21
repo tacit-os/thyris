@@ -742,7 +742,14 @@ says what it skipped >│ │1 unloaded page skipped   │ │ [ ] = Chromium's 
 └──────────────────────────────┴───────────────────────────────────────────────────────────────────┘
 ```
 
-- A clean quit writes a flag; its absence at start means a crash. Threads come back as always, all unloaded, so no page runs until opened. The page that was on screen is offered as one button, not loaded. If the browser crashes again within a minute of opening it, that page is left out of the next restore and listed in Earlier.
+- A clean quit writes a flag; its absence at start means a crash. A record from another log-in session (its
+  `XDG_SESSION_ID`) means the session ended while the browser was still running — a shutdown or a log-out, where the
+  compositor's Wayland connection goes first and Qt ends the browser without its quit's steps — so no page is shown.
+  A record with no session (one written before this was kept) is judged by its last-seen time: one from before the
+  machine started ended with the session the same way.
+  Threads come back as always, all unloaded, so no page runs until opened. The page that was on screen is offered as one
+  button, not loaded. If the browser crashes again within a minute of opening it, that page is left out of the next
+  restore and listed in Earlier.
 - If the GPU process restarts and the window goes black (seen as a scene-graph error), the browser rebuilds the window's scene and every live view reloads; the address card says "Graphics restarted · pages reloaded" for 3 s. This is untested and must be forced during phase 2.
 
 Dialogs a page opens, and dialogs the browser must supply:

@@ -103,6 +103,23 @@ QVariantMap Facts::memory(qint64 pid) const {
     return {{QStringLiteral("bytes"), double(kb) * 1024}, {QStringLiteral("cgroup"), path}};
 }
 
+// Check mode has no session of its own to compare with (the checks make run records themselves), so it answers none.
+QString Facts::sessionId() const {
+    return dryRun ? QString() : qEnvironmentVariable("XDG_SESSION_ID");
+}
+
+double Facts::bootedAt() const {
+    if (dryRun)
+        return 0;
+    QFile stat(QStringLiteral("/proc/stat"));
+    if (!stat.open(QIODevice::ReadOnly))
+        return 0;
+    for (const QByteArray &line : stat.readAll().split('\n'))
+        if (line.startsWith("btime "))
+            return line.mid(6).trimmed().toDouble() * 1000;
+    return 0;
+}
+
 QVariantMap Facts::systemMemory() const {
     QFile meminfo(QStringLiteral("/proc/meminfo"));
     if (!meminfo.open(QIODevice::ReadOnly))

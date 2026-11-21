@@ -203,11 +203,19 @@ function unresponsive(c) {
                   actions: [{ label: "Wait", action: "wait" }, { label: "Reload", action: "reload" }] });
 }
 
-// What the last start left behind (`last`: the run record, { clean, alive, page, suspect }, or null on a
-// first start): whether the browser did not close cleanly, when it was last seen running, the page that was
-// on screen, and the page to leave out because the browser stopped again within a minute of opening it.
-function afterStart(last, now) {
-    const crashed = !!last && last.clean === false;
+// What the last start left behind (`last`: the run record, { clean, session, alive, page, suspect }, or null on a
+// first start; `session` and `bootedAt`: the log-in session this start runs in and when the machine started, 0 when
+// there is none to compare): whether the browser did not close cleanly, when it was last seen running, the page that
+// was on screen, and the page to leave out because the browser stopped again within a minute of opening it. A record
+// from another session is no crash: the browser was still running when that session ended (a shutdown, a log-out, a
+// compositor that went first), and the session, not the browser, is what stopped it. A record with no session (one
+// written before sessions were kept) that was last seen before the machine started is read the same way. Anything
+// with nothing to compare against is read as before.
+function afterStart(last, now, session, bootedAt) {
+    const endedWithTheSession = !!last && last.clean === false && (last.session
+        ? !!session && last.session !== session
+        : !!session && bootedAt > 0 && last.alive < bootedAt);
+    const crashed = !!last && last.clean === false && !endedWithTheSession;
     return { crashed: crashed, at: crashed ? (last.alive ?? now) : 0, page: crashed ? (last.page ?? "") : "",
              leaveOut: crashed ? (last.suspect ?? "") : "" };
 }

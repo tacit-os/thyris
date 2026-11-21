@@ -4223,7 +4223,7 @@ Window {
         }
         if (root.shotMode || !root.runStarted)
             return;
-        root.run = Object.assign({}, root.run, fields, { clean: false, alive: Date.now() });
+        root.run = Object.assign({}, root.run, fields, { clean: false, alive: Date.now(), session: Facts.sessionId() });
         Store.save("run", root.run);
     }
     // a page opened from the restore page stays suspect for a minute
@@ -4233,10 +4233,15 @@ Window {
     // A start after a run record not marked clean: the browser did not close cleanly. The threads come back
     // unloaded as always and nothing loads; the page that was on screen is offered, not loaded. A page opened
     // from there that stopped the browser again within a minute is left out, into Earlier. False after a
-    // clean close. This run's record starts here and keeps the page offered, so a stop before it is opened
-    // offers it again.
+    // clean close, and after a record from another log-in session or from before this machine started: the session
+    // ended (a shutdown or a log-out), which Qt cannot save for, since the compositor's Wayland connection goes first
+    // and Qt ends the process without the quit's steps (qwaylanddisplay.cpp, checkWaylandError's _exit). This run's
+    // record starts here and keeps the page offered, so a stop before it is opened offers it again.
     function startAfter(last) {
-        const start = Failures.afterStart(last && typeof last === "object" ? last : null, Date.now());
+        // shot mode seeds records with times of its own (Shots.qml), so it has no session or start to tell them by
+        const session = root.shotMode ? "" : Facts.sessionId();
+        const start = Failures.afterStart(last && typeof last === "object" ? last : null, Date.now(), session,
+                                          session ? Facts.bootedAt() : 0);
         root.run = {};
         root.runStarted = true;
         if (!start.crashed) {

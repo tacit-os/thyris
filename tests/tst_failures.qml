@@ -190,6 +190,17 @@ TestCase {
         compare(Failures.afterStart({ clean: false, alive: at, page: "p1", suspect: "p1" }, at).leaveOut, "p1",
                 "it stopped again within a minute of opening that page");
     }
+    function test_afterStartAndTheSession() {
+        const last = { clean: false, session: "2", alive: at - 60000, page: "p1" };
+        verify(Failures.afterStart(last, at, "2").crashed, "the same log-in session: the browser stopped");
+        compare(Failures.afterStart(last, at, "3").crashed, false, "another session: the session ended, not the browser");
+        compare(Failures.afterStart(last, at).crashed, true, "no session now: nothing to compare it with, as before");
+        // a record written before sessions were kept: its last-seen time against this machine's start
+        const old = { clean: false, alive: at - 60000, page: "p1" };
+        compare(Failures.afterStart(old, at, "2", at + 3600000).crashed, false, "last seen before this machine started");
+        verify(Failures.afterStart(old, at, "2", at - 3600000).crashed, "last seen in this boot: read as before");
+        verify(Failures.afterStart(old, at, "2", 0).crashed, "no start to compare: read as before");
+    }
     function test_restore() {
         const p = Failures.restore({ at: new Date(2026, 8, 24, 14, 2).getTime(), pageId: "p1", title: "camss: CSIPHY0 lanes ignored #212" });
         compare(p.title, "The browser did not close cleanly at 14:02");
