@@ -3398,7 +3398,7 @@ Window {
             if (run.want.history !== false)
                 run.history = root.hub.historyModel.importEntries(found.history);
             if (run.want.tabs !== false && found.tabs.length > 0)
-                run.tabs = root.openTabs(found.tabs, run.browser);
+                run.tabs = sessionModel.openTabs(found.tabs, run.browser);
             root.setKind("bookmarks", { done: found.bookmarks.length, total: found.bookmarks.length });
             root.setKind("history", { done: found.history.length, total: found.history.length });
             root.setKind("tabs", { done: found.tabs.length, total: found.tabs.length });
@@ -3488,27 +3488,6 @@ Window {
             root.showNotice({ text: "Brought over from " + run.browser, action: "Show", run: done, where: "card" }, 8000);
     }
 
-    // A browser's open tabs as pages (unloaded, so none loads) in a thread of their own, "From Zen" (with Zen's workspace or
-    // Chrome's tab group, "From Chrome: Kernel"); a page already open at that address before the import is left (a second
-    // import adds nothing), a tab the browser has twice is two pages. Not shown: the page on screen stays.
-    function openTabs(tabs, browser) {
-        const have = new Set(Object.values(sessionModel.pages).map(p => p.url)), threads = {};
-        let added = 0, kept = 0;
-        for (const t of tabs) {
-            if (have.has(t.url)) {
-                kept++;
-                continue;
-            }
-            const from = "From " + browser, group = t.space || t.group;
-            const name = group ? from + ": " + group : from;
-            threads[name] = threads[name] ?? sessionModel.newThread(name);
-            const id = sessionModel.addPage(threads[name], t.url);
-            if (t.title)
-                sessionModel.update(id, { title: t.title });
-            added++;
-        }
-        return { added: added, kept: kept };
-    }
     Connections {
         target: root.primary ? null : Zen
         function onRead(found) {
@@ -3521,7 +3500,7 @@ Window {
             const run = { bookmarks: want.bookmarks === false ? { added: 0, kept: 0 } : root.savedModel.importPages(found.bookmarks, Zen.browser || "Zen"),
                           history: want.history === false ? { added: 0, kept: 0 } : root.historyModel.importEntries(found.history) };
             if (found.tabs)
-                run.tabs = found.tabsFailed ? { failed: true } : root.openTabs(found.tabs, Zen.browser || "Zen");
+                run.tabs = found.tabsFailed ? { failed: true } : sessionModel.openTabs(found.tabs, Zen.browser || "Zen");
             root.zenRun = Object.assign({}, root.zenRun, run);
         }
         function onCookiesDone(result) {

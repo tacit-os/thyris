@@ -761,6 +761,29 @@ TestCase {
         compare(s.closePage(a), [], "and is not closed from the rail");
     }
 
+    // Discord, Mustiya: another browser's pinned tabs came over as pages of "From Zen", so the pins showed
+    // one site or none. They are pins now, in that browser's order, one per site, the first one kept.
+    function test_broughtTabsPinnedOnesArePins() {
+        const s = make();
+        const mine = s.addAlways("https://mail.google.com/mail/u/0/", "Gmail", "");
+        const tabs = [
+            { url: "https://music.youtube.com/", title: "YouTube Music", pinned: true },
+            { url: "https://mail.google.com/", title: "Gmail (theirs)", pinned: true },
+            { url: "https://discord.com/channels/@me", title: "Discord", pinned: true },
+            { url: "https://discord.com/app", title: "Discord again", pinned: true },
+            { url: "file:///home/u/notes.html", title: "notes", pinned: true },
+            { url: "https://lwn.net/", title: "LWN", pinned: false, group: "Kernel" },
+            { url: "https://example.org/a", title: "A" },
+        ];
+        compare(s.openTabs(tabs, "Zen"), { added: 5, kept: 2 });
+        compare(s.always.map(id => s.pages[id].title), ["Gmail", "YouTube Music", "Discord"], "theirs after mine, in their order");
+        compare(s.always[0], mine, "the site pinned already keeps its pin");
+        const threads = s.threads.map(t => t.title + ": " + t.pages.map(id => s.pages[id].title).join(", ")).sort();
+        compare(threads, ["From Zen: Kernel: LWN", "From Zen: notes, A"], "a pinned file is no site to pin: a page as before");
+        compare(s.openTabs(tabs, "Zen"), { added: 0, kept: 7 }, "a second import adds nothing");
+        compare(s.always.length, 3);
+    }
+
     function test_learnedThreadsOnceAThreadHasTwoPages() {
         const [s] = withThread("t", ["one"]);
         compare(s.learned.threads, false);

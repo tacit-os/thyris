@@ -131,8 +131,9 @@ QVariantList bookmarksOf(const QString &file) {
 // The open tabs of a profile's session (Sessions/Session_<time>, the newest; "Current Session" before Chrome 86), as
 // Chromium writes it: "SNSS", a version (1, or 3 with markers), then commands, each a 16-bit size, an id and its payload.
 // The commands are replayed as Chromium restores a session: which window a tab is in and where, its pages and the one
-// shown, closed tabs and windows gone, its tab group's title. Normal windows only (no popups or apps), in the order
-// Chrome first named them, tabs by their place, each its page shown: [{ url, title, group }], http(s) pages only. Nothing for a session that is not there or does not read.
+// shown, closed tabs and windows gone, its tab group's title, whether it is pinned. Normal windows only (no popups or
+// apps), in the order Chrome first named them, tabs by their place, each its page shown: [{ url, title, group, pinned }],
+// http(s) pages only. Nothing for a session that is not there or does not read.
 namespace snss {
 qint32 i32(const QByteArray &b, qsizetype at) {
     if (at < 0 || at + 4 > b.size())
@@ -160,7 +161,8 @@ bool string16(const QByteArray &b, qsizetype &at, QString &out) {
     return true;
 }
 }
-QVariantList tabsOf(const QString &profile) {
+}
+QVariantList ChromeImport::tabsOf(const QString &profile) {
     QString file;
     const QFileInfoList sessions = QDir(profile + u"/Sessions"_s).entryInfoList({u"Session_*"_s}, QDir::Files, QDir::Name);
     if (!sessions.isEmpty())
@@ -174,7 +176,7 @@ QVariantList tabsOf(const QString &profile) {
     const qint32 version = snss::i32(d, 4);
     if (!d.startsWith("SNSS") || (version != 1 && version != 3))
         return {};
-    struct Tab { qint32 window = -1, index = 0, current = -1; QByteArray group; QMap<qint32, std::pair<QString, QString>> pages; };
+    struct Tab { qint32 window = -1, index = 0, current = -1; bool pinned = false; QByteArray group; QMap<qint32, std::pair<QString, QString>> pages; };
     QHash<qint32, Tab> tabs;
     QHash<qint32, qint32> types;        // window -> its type, 0 normal
     QList<qint32> windows;              // in the order first named
@@ -230,6 +232,9 @@ QVariantList tabsOf(const QString &profile) {
                 t.current -= count;
             break;
         }
+        case 12:    // pinned or not: the tab, then a bool
+            tabs[snss::i32(p, 0)].pinned = p.size() > 4 && p[4] != 0;
+            break;
         case 16:    // a tab closed
             tabs.remove(snss::i32(p, 0));
             break;
@@ -263,11 +268,13 @@ QVariantList tabsOf(const QString &profile) {
             const auto page = t->pages.value(t->current, t->pages.last());
             if (!page.first.startsWith(u"https://"_s) && !page.first.startsWith(u"http://"_s))
                 continue;
-            out.append(QVariantMap{{u"url"_s, page.first}, {u"title"_s, page.second}, {u"group"_s, groups.value(t->group)}});
+            out.append(QVariantMap{{u"url"_s, page.first}, {u"title"_s, page.second}, {u"group"_s, groups.value(t->group)}, {u"pinned"_s, t->pinned}});
         }
     }
     return out;
 }
+
+namespace {
 
 // a host's registrable domain, near enough for counting sites: its last two labels, three under a two-letter country
 // code with a short second level (co.uk, com.au); an address or a single label as it is (as Zen's count does)

@@ -539,6 +539,39 @@ QtObject {
         return pageId;
     }
 
+    // A browser's open tabs brought over (Main, from Zen or ChromeImport) as pages (unloaded, so none loads) in a thread of
+    // their own, "From Zen" (with Zen's workspace or Chrome's tab group, "From Chrome: Kernel"); a page already open at that
+    // address before the import is left (a second import adds nothing), a tab the browser has twice is two pages. Its
+    // pinned tabs (Zen's essentials too) are pins, in its order, one per site: a site already pinned keeps its pin. Not
+    // shown: the page on screen stays. Returns { added, kept }.
+    function openTabs(tabs, browser) {
+        const have = new Set(Object.values(pages).map(p => p.url)), threads = {};
+        let added = 0, kept = 0;
+        for (const t of tabs) {
+            if (t.pinned && /^[a-z]+:\/\/[^\/?#]+/i.test(t.url)) {
+                if (alwaysFor(t.url) !== undefined) {
+                    kept++;
+                } else {
+                    addAlways(t.url, t.title, "");
+                    added++;
+                }
+                continue;
+            }
+            if (have.has(t.url)) {
+                kept++;
+                continue;
+            }
+            const from = "From " + browser, group = t.space || t.group;
+            const name = group ? from + ": " + group : from;
+            threads[name] = threads[name] ?? newThread(name);
+            const id = addPage(threads[name], t.url);
+            if (t.title)
+                update(id, { title: t.title });
+            added++;
+        }
+        return { added: added, kept: kept };
+    }
+
     // Close page on a pin (Ctrl+W, the middle button, its menu): the page goes and the cell stays, unloaded and back at
     // its start, so a click opens it again; closePage found no thread for a pin and did nothing. Returns the page ids
     // whose views should go.

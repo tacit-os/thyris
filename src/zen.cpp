@@ -388,11 +388,14 @@ bool readCookies(const QString &profile, const QString &into, Jar &jar, bool val
     return ok;
 }
 
+}
+
 // The tabs of the newest session file Zen has (sessionstore.jsonlz4, or recovery.jsonlz4 in sessionstore-backups, which
-// a running Zen writes), of every window: { url, title, space }, essential tabs first, then pinned, then the rest, each
-// in Zen's order. Only web pages and files; `space` (the workspace's name) only when the tabs span more than one. `ok`
-// is false when a session file exists and none opens.
-QVariantList readTabs(const QString &profile, const QString &into, bool &ok) {
+// a running Zen writes), of every window: { url, title, space, pinned }, essential tabs first, then pinned, then the
+// rest, each in Zen's order; `pinned` for those two, as Firefox's `pinned` and Zen's `zenEssential` mark them. Only web
+// pages and files; `space` (the workspace's name) only when the tabs span more than one. `ok` is false when a session
+// file exists and none opens.
+QVariantList Zen::readTabs(const QString &profile, const QString &into, bool &ok) {
     ok = true;
     QStringList files;
     for (const char *name : {"/sessionstore.jsonlz4", "/sessionstore-backups/recovery.jsonlz4"})
@@ -439,12 +442,14 @@ QVariantList readTabs(const QString &profile, const QString &into, bool &ok) {
         QVariantList out;
         for (const Tab &t : std::as_const(tabs))
             out.append(QVariantMap{{QStringLiteral("url"), t.url}, {QStringLiteral("title"), t.title},
-                                   {QStringLiteral("space"), spaces.size() > 1 ? t.space : QString()}});
+                                   {QStringLiteral("space"), spaces.size() > 1 ? t.space : QString()}, {QStringLiteral("pinned"), t.rank < 2}});
         return out;
     }
     ok = files.isEmpty();
     return {};
 }
+
+namespace {
 
 // What readProfile takes out of the profile besides what it returns: the cookies (never to QML), the numbers about them
 struct Taken {
@@ -538,7 +543,7 @@ QVariantMap readProfile(const QString &profile, const QString &into, bool cookie
     }
     if (tabs) {
         bool ok;
-        out.insert(QStringLiteral("tabs"), readTabs(profile, into, ok));
+        out.insert(QStringLiteral("tabs"), Zen::readTabs(profile, into, ok));
         if (!ok)
             out.insert(QStringLiteral("tabsFailed"), true);
     }

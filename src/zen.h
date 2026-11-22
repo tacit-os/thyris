@@ -53,6 +53,9 @@ public:
     static int nssHelper(int argc, char *argv[]);
     // Firefox's install hash (CityHash64 1.0 of the install folder's path in UTF-16), as [Install<hash>] names it
     static QString installHash(const QString &folder);
+    // The open tabs of a profile's newest session file, copied into `into` to be read: [{ url, title, space, pinned }]
+    // (zen.cpp); `ok` false when there is one and none opens
+    static QVariantList readTabs(const QString &profile, const QString &into, bool &ok);
 
     QVariantMap profile() const { return m_profile; }
     QVariantList browsers() const { return m_browsers; }
@@ -86,7 +89,7 @@ signals:
     void profileChanged();
     void stateChanged();
     // { bookmarks: [{ url, title, folder, added }], history: [{ url, title, visits, last }], logins, primary, failure }
-    // `tabs` ([{ url, title, space }], pinned and essential first) only when wanted
+    // `tabs` ([{ url, title, space, pinned }], pinned and essential first) only when wanted
     void read(const QVariantMap &found);
     void scanned();
     // { added, kept (already in the store), rejected (the engine refused them), skipped (partitioned or in a container),

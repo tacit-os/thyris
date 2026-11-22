@@ -111,4 +111,11 @@ if(NOT BROWSER_CEF)
     target_compile_definitions(engine_test PRIVATE OPSIS_VERSION="${PROJECT_VERSION}")
     target_link_libraries(engine_test PRIVATE Qt6::GuiPrivate Qt6::Quick Qt6::Qml Qt6::Network Qt6::Test Qt6::WebEngineQuick Qt6::WebEngineQuickPrivate Qt6::WebEngineCore OpenSSL::Crypto ZLIB::ZLIB)
     add_test(NAME engine_test COMMAND engine_test)
+    # The tabs the imports read from Zen's, Firefox's and Chrome's session files (Zen::readTabs, ChromeImport::tabsOf), on
+    # tests/fixtures/import: ctest, or `cmake --build <dir> --target import_test` and run <dir>/import_test
+    qt_add_executable(import_test EXCLUDE_FROM_ALL tests/native/import_test.cpp src/zen.cpp src/chromeimport.cpp src/passwords.cpp src/passwordfile.cpp src/sitedata.cpp)
+    target_include_directories(import_test PRIVATE src)
+    target_compile_definitions(import_test PRIVATE SRCDIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/import")
+    target_link_libraries(import_test PRIVATE Qt6::Quick Qt6::Qml Qt6::Network Qt6::DBus Qt6::Test Qt6::WebEngineQuick Qt6::WebEngineCore SQLite3::SQLite3 OpenSSL::Crypto)
+    add_test(NAME import_test COMMAND import_test)
 endif()

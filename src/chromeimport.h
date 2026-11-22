@@ -14,7 +14,8 @@
 // decrypts its passwords as Chromium does on Linux, straight into the keyring (Passwords::importLogins), never to QML:
 // v11 is AES-128-CBC under a key PBKDF2-HMAC-SHA1'd (salt "saltysalt", one round) from the browser's own secret in the
 // keyring (attribute application = chrome, chromium, brave...), the IV sixteen spaces; v10 the same from "peanuts". Its
-// open tabs come from its session file (tabsOf), as Main opens Zen's: pages in a task of their own, none loaded.
+// open tabs come from its session file (tabsOf), as Main opens Zen's: pages in a task of their own, none loaded, its pinned
+// tabs pins.
 class ChromeImport : public QObject {
     Q_OBJECT
     QML_ELEMENT
@@ -51,12 +52,14 @@ public:
     static QByteArray encrypt(const QByteArray &plain, const QByteArray &secret, const char *tag);
     // the plain value, or a null QByteArray when it does not open (another key, another scheme)
     static QByteArray decrypt(const QByteArray &data, const QByteArray &secret);
+    // the open tabs of a profile's newest session file: [{ url, title, group, pinned }] (chromeimport.cpp)
+    static QVariantList tabsOf(const QString &profile);
 
 signals:
     void foundChanged();
     void stateChanged();
     // { browser, bookmarks: [{ url, title, folder: [names], added }], history: [{ url, title, visits, last }], tabs: [{ url,
-    // title, group (its tab group's title, "" for none) }], failure }
+    // title, group (its tab group's title, "" for none), pinned }], failure }
     void read(const QVariantMap &found);
     // the passwords going into the keyring
     void progress(int done, int total);

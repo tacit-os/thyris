@@ -4706,7 +4706,7 @@ QtObject {
     // Settings > Import counting the sites and tabs in plain words behind two choices; the cookies set into the profile's
     // store (host-only and domain, Secure, HttpOnly, SameSite, expiry in seconds or milliseconds; expired, partitioned and
     // container cookies left out and counted; a session cookie kept); a page of the store's own reading a brought cookie;
-    // the tabs from the session file opened in a thread of their own, essential and pinned first, unloaded, the page on
+    // the tabs from the session file opened in a thread of their own, the essential and pinned ones pins, unloaded, the page on
     // screen unchanged; nothing twice on a second import; both choices off bringing neither; Zen's folder not written, no
     // copy left in the temp dir. `zenreal` (BROWSER_ZEN_COPY: a copy of a real Zen folder) does the same with real data,
     // printing counts only.
@@ -4776,11 +4776,15 @@ QtObject {
               probe.report("     " + [v("zen-cookies"), v("zen-tabs")].join(" | "));
               return v("zen-cookies") === "7 brought over · 2 left out: Zen keeps them apart, per site or per container" && v("zen-tabs") === "5 opened"
                   && !!n && /sign in again/.test(n.label) } },
-        { name: "the tabs: one thread, From Zen, essential and pinned first, with their titles, none loaded, the page on screen the one it was",
+        { name: "the tabs: the essential and the pinned one pins, in that order, the rest one thread, From Zen, with their titles, none loaded, the page on screen the one it was",
           expect: () => { const t = session.threads.find(t => t.title === "From Zen"), pages = t ? t.pages.map(id => session.pages[id]) : [];
-              probe.report("     " + pages.map(p => p.url.replace(/^https:\/\/|\/.*$/g, "") + ":" + p.title + ":" + p.state).join(", "));
-              return !!t && pages.map(p => p.url).join() === "https://ess.test/,https://pin.test/,https://one.test/,https://two.test/a,https://one.test/"
-                  && pages.map(p => p.title).join() === "Essential,Pinned,One,Two,One again" && pages.every(p => p.state === "unloaded")
+              check.zenPins = ["https://ess.test/", "https://pin.test/"].map(u => session.alwaysFor(u));
+              const pins = check.zenPins.map(id => session.pages[id] ?? {});
+              probe.report("     pins " + pins.map(p => p.title + ":" + p.state).join(", ") + "; " + pages.map(p => p.url.replace(/^https:\/\/|\/.*$/g, "") + ":" + p.title + ":" + p.state).join(", "));
+              return !!t && pages.map(p => p.url).join() === "https://one.test/,https://two.test/a,https://one.test/"
+                  && pages.map(p => p.title).join() === "One,Two,One again" && pages.every(p => p.state === "unloaded")
+                  && pins.map(p => p.title).join() === "Essential,Pinned" && pins.every(p => p.state === "unloaded")
+                  && session.always.slice(-2).join() === check.zenPins.join()
                   && !t.pages.includes(session.currentPage) && session.currentPage !== "" } },
         { name: "Zen's folder not written; no copy of it left in the temp dir",
           expect: () => probe.folderStamp(check.zenMade.root) === check.zenStamp && !probe.entries(probe.tempDir()).some(n => n.startsWith("browser-zen-")) },
@@ -4797,6 +4801,8 @@ QtObject {
           expect: () => Zen.state === "" && !check.ownRow("zen-cookies") && !check.ownRow("zen-tabs") && !check.ownRow("zen-signin") && SiteData.allCookies() === check.cookiesBefore
               && Object.keys(session.pages).length === check.pagesBefore },
         { name: "(the choices on again)", wait: 800, act: () => { app.prefs.set("zenCookies", true); app.prefs.set("zenTabs", true) }, expect: () => app.prefs.get("zenCookies") === true },
+        { name: "(the two pins it brought taken off)", wait: 600, act: () => { for (const id of check.zenPins) app.command("removeAlways", id, null) },
+          expect: () => check.zenPins.every(id => session.always.indexOf(id) < 0) },
         { name: "(Settings closed)", wait: 800, act: () => { for (const id of check.ownPages("browser://settings")) app.closePage(id) },
           expect: () => check.ownPages("browser://settings").length === 0 && app.ownKind === "" && !!view },
         { name: "(a plain page on screen)", wait: 1500, act: () => app.go(check.local("/plain"), "navigate"), expect: () => view.title === "plain" && !view.loading },
@@ -4818,7 +4824,8 @@ QtObject {
               const c = check.ownRow("zenCookies"), t = check.ownRow("zenTabs");
               probe.report("     " + (c ? c.label : "-") + " | " + (t ? t.label : "-"));
               return !!c && !!t && Zen.sites > 0 && Zen.tabs > 0 } },
-        { name: "Import: the cookies into the store, the tabs as pages", wait: 15000, act: () => { if (check.realRoot !== "") check.clickOwn("own:zen:action") },
+        { name: "Import: the cookies into the store, the tabs as pages, the pinned ones as pins", wait: 15000,
+          act: () => { check.zenPins = session.always.slice(); if (check.realRoot !== "") check.clickOwn("own:zen:action") },
           expect: () => { if (check.realRoot === "") return true;
               const z = (Store.load("settings") ?? {}).zenImport;
               probe.report("     cookies " + JSON.stringify(z && z.cookies) + " tabs " + JSON.stringify(z && z.tabs));
@@ -4831,11 +4838,13 @@ QtObject {
                            + off.slice(0, 8).map(h => h.replace(/[^.]+/g, "*") + " " + expect[h] + "/" + SiteData.cookies(h)).join(", ")
                            + "; store " + check.cookiesBefore + " -> " + SiteData.allCookies());
               return SiteData.allCookies() === check.cookiesBefore + z.added && (z.rejected > 0 || off.length === 0) } },
-        { name: "the tabs are in one thread, From Zen, unloaded, and the page on screen is still the one it was",
+        { name: "the tabs are in one thread, From Zen, the pinned ones pins, unloaded, and the page on screen is still the one it was",
           expect: () => { if (check.realRoot === "") return true;
               const z = (Store.load("settings") ?? {}).zenImport.tabs, t = session.threads.find(t => t.title.startsWith("From Zen"));
-              probe.report("     " + (t ? t.pages.length : 0) + " pages in the thread, " + (t ? t.pages.filter(id => session.pages[id].state === "unloaded").length : 0) + " of them unloaded");
-              return !!t && t.pages.length === z.added && t.pages.every(id => session.pages[id].state === "unloaded") && !t.pages.includes(session.currentPage) } },
+              const pins = session.always.filter(id => check.zenPins.indexOf(id) < 0);
+              probe.report("     " + (t ? t.pages.length : 0) + " pages in the thread, " + (t ? t.pages.filter(id => session.pages[id].state === "unloaded").length : 0) + " of them unloaded, "
+                           + pins.length + " pins");
+              return !!t && t.pages.length + pins.length === z.added && t.pages.concat(pins).every(id => session.pages[id].state === "unloaded") && !t.pages.includes(session.currentPage) } },
         { name: "Zen's folder (the copy) not written; no copy left in the temp dir",
           expect: () => check.realRoot === "" || (probe.folderStamp(check.realRoot) === check.realStamp && !probe.entries(probe.tempDir()).some(n => n.startsWith("browser-zen-"))) },
         { name: "(Settings closed)", wait: 800, act: () => { for (const id of check.ownPages("browser://settings")) app.closePage(id) },
@@ -4848,6 +4857,7 @@ QtObject {
     property string cookieSeen: ""
     property real cookieFuture: 0
     property var zenMade: ({})
+    property var zenPins: []        // zensession: the pins its import made; zenreal: the pins before its import
     property var zenLocked: ({})
     property string zenStamp: ""
     property string zenUserOne: ""
