@@ -745,8 +745,8 @@ says what it skipped >│ │1 unloaded page skipped   │ │ [ ] = Chromium's 
 - A clean quit writes a flag; its absence at start means a crash. A record from another log-in session (its
   `XDG_SESSION_ID`) means the session ended while the browser was still running — a shutdown or a log-out, where the
   compositor's Wayland connection goes first and Qt ends the browser without its quit's steps — so no page is shown.
-  A record with no session (one written before this was kept) is judged by its last-seen time: one from before the
-  machine started ended with the session the same way.
+  A record last seen before the machine started ended with the session the same way, whatever its session: logind
+  numbers sessions from 1 again at every start, so after a restart the first log-in has the record's number.
   Threads come back as always, all unloaded, so no page runs until opened. The page that was on screen is offered as one
   button, not loaded. If the browser crashes again within a minute of opening it, that page is left out of the next
   restore and listed in Earlier.

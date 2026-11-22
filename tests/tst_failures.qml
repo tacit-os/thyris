@@ -195,6 +195,9 @@ TestCase {
         verify(Failures.afterStart(last, at, "2").crashed, "the same log-in session: the browser stopped");
         compare(Failures.afterStart(last, at, "3").crashed, false, "another session: the session ended, not the browser");
         compare(Failures.afterStart(last, at).crashed, true, "no session now: nothing to compare it with, as before");
+        // a restart: logind numbers sessions from 1 again, so the first log-in has the record's number
+        compare(Failures.afterStart(last, at, "2", at + 3600000).crashed, false, "the same number, but from before this machine started");
+        verify(Failures.afterStart(last, at, "2", at - 3600000).crashed, "the same session in this boot: the browser stopped");
         // a record written before sessions were kept: its last-seen time against this machine's start
         const old = { clean: false, alive: at - 60000, page: "p1" };
         compare(Failures.afterStart(old, at, "2", at + 3600000).crashed, false, "last seen before this machine started");
