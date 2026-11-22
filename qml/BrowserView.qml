@@ -1316,7 +1316,7 @@ WebEngineView {
         request.accepted = true;
         const mode = request.mode === FileDialogRequest.FileModeOpenMultiple ? "multiple" : request.mode === FileDialogRequest.FileModeUploadFolder ? "folder"
                    : request.mode === FileDialogRequest.FileModeSave ? "save" : "one";
-        if (mode === "save" || !Picker.pick(PageState.pickLabel(mode, PageState.pageHost(String(url))))) {
+        if (mode === "save" || !Picker.pick(PageState.pickLabel(mode, PageState.pageHost(String(url))), mode === "folder")) {
             request.dialogReject();
             return;
         }

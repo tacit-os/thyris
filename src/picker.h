@@ -13,6 +13,7 @@ class QProcess;
 // (one IpcHandler) runs for the length of a pick and prints what it is handed. Files says nothing when a
 // pick ends without a choice, so a pick is over once the browser is active again and no choice has come
 // within 1 s, or when the browser has not lost the focus to Files within 5 s.
+// A folder input's pick is `files pickdir`: Files asks for a folder, and Choose takes the one selected or shown.
 class Picker : public QObject {
     Q_OBJECT
     QML_ELEMENT
@@ -25,8 +26,8 @@ public:
     // --check-engine: nothing runs; answer() plays Files' part
     static inline bool dryRun = false;
 
-    // Opens Files for one pick; false while another pick is open.
-    Q_INVOKABLE bool pick(const QString &label);
+    // Opens Files for one pick, of a folder with `folder`; false while another pick is open.
+    Q_INVOKABLE bool pick(const QString &label, bool folder = false);
     // Check mode: Choose with `paths`, or Cancel with none.
     Q_INVOKABLE void answer(const QStringList &paths);
     // Ends the pick with nothing chosen, for a page that no longer waits on it. Files stays open (it takes

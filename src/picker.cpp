@@ -52,7 +52,7 @@ Picker::Picker(QObject *parent) : QObject(parent) {
     });
 }
 
-bool Picker::pick(const QString &label) {
+bool Picker::pick(const QString &label, bool folder) {
     if (m_busy)
         return false;
     m_busy = true;
@@ -103,8 +103,8 @@ bool Picker::pick(const QString &label) {
         if (serial == m_serial)
             end({});
     });
-    call->start(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("files"), QStringLiteral("pick"), QDir::homePath(), shell,
-                                                              QStringLiteral("browser"), label});
+    call->start(QStringLiteral("qs"), shellIpc() + QStringList{QStringLiteral("files"), folder ? QStringLiteral("pickdir") : QStringLiteral("pick"),
+                                                              QDir::homePath(), shell, QStringLiteral("browser"), label});
     m_call.start();
     return true;
 }
